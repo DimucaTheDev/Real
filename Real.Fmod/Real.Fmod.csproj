@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net11.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <_NativeArch Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_NativeArch>
+        <_NativeArch Condition="'$(_NativeArch)' == '' And '$(PlatformTarget)' == 'x86'">win-x86</_NativeArch>
+        <_NativeArch Condition="'$(_NativeArch)' == '' And '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">win-arm64</_NativeArch>
+        <_NativeArch Condition="'$(_NativeArch)' == ''">win-x64</_NativeArch>
+    </PropertyGroup>
+
+    <Target Name="ValidateTargetPlatform" BeforeTargets="BeforeBuild">
+        <Error Condition="'$(RuntimeIdentifier)' != '' And !$(RuntimeIdentifier.StartsWith('win'))"
+               Text="Platform '$(RuntimeIdentifier)' is not supported" />
+    </Target>
+    
+    <!-- ===================  DEBUG L  =================== -->
+    <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+        <None Include="native\$(_NativeArch)\fmodL.dll">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+            <TargetPath>engine\natives\fmod.dll</TargetPath>
+            <Visible>false</Visible>
+        </None>
+        <None Include="native\$(_NativeArch)\fmodstudioL.dll">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+            <TargetPath>engine\natives\fmodstudio.dll</TargetPath>
+            <Visible>false</Visible>
+        </None>
+    </ItemGroup>
+
+    <!-- ===================  RELEASE  =================== -->
+    <ItemGroup Condition="'$(Configuration)' == 'Release'">
+        <None Include="native\$(_NativeArch)\fmod.dll">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+            <TargetPath>engine\natives\fmod.dll</TargetPath>
+            <Visible>false</Visible>
+        </None>
+        <None Include="native\$(_NativeArch)\fmodstudio.dll">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+            <TargetPath>engine\natives\fmodstudio.dll</TargetPath>
+            <Visible>false</Visible>
+        </None>
+    </ItemGroup>    
+    
+</Project>

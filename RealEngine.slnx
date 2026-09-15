@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/Editor/">
+    <Project Path="RealEditor/RealEditor.csproj" />
+  </Folder>
+  <Folder Name="/Engine/">
+    <Project Path="Real.Fmod/Real.Fmod.csproj" />
+    <Project Path="Real/Real.csproj" />
+  </Folder>
+  <Folder Name="/Engine/Rendering/">
+    <Project Path="Real.Graphics.Vulkan/Real.Graphics.Vulkan.csproj" />
+  </Folder>
+  <Folder Name="/Engine/Windowing/">
+    <Project Path="Real.Windowing.Glfw/Real.Windowing.Glfw.csproj" />
+    <Project Path="Real.Windowing.Headless/Real.Windowing.Headless.csproj" />
+  </Folder>
+  <Folder Name="/Runtime/">
+    <Project Path="Test/Test.csproj" />
+  </Folder>
+</Solution>

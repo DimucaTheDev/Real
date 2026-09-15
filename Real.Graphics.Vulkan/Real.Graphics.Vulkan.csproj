@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net11.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Real\Real.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.23.0" PrivateAssets="compile" /><!--PrivateAssets="compile"-->
+        <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.23.0" PrivateAssets="compile" /><!--PrivateAssets="compile"-->
+        <PackageReference Include="Silk.NET.Vulkan" Version="2.23.0" PrivateAssets="compile" /><!--PrivateAssets="compile"-->
+    </ItemGroup>
+</Project>
