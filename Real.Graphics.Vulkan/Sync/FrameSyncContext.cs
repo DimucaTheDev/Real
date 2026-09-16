@@ -15,7 +15,6 @@ internal sealed class FrameSyncContext
     public const int FramesInFlight = 2;
 
     public Semaphore ImageAvailable { get; init; }
-    public Semaphore RenderFinished { get; init; }
     public Fence InFlightFence { get; init; }
     public CommandBuffer CommandBuffer { get; init; }
 }

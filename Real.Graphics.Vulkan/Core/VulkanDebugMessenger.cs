@@ -31,7 +31,7 @@ internal sealed class VulkanDebugMessenger : IDisposable
                 | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
             PfnUserCallback = new PfnDebugUtilsMessengerCallbackEXT(DebugCallback)
         };
-        _debugUtils.CreateDebugUtilsMessenger(_instance, &createInfo, null, out _); 
+        _debugUtils.CreateDebugUtilsMessenger(_instance, &createInfo, null, out _messenger); 
     }
 
     private static unsafe uint DebugCallback(

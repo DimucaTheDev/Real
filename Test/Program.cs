@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Real.Graphics.Rhi.Descriptors;
 using Real.Graphics.Rhi.Enums;
 using Real.Graphics.Vulkan;
@@ -9,7 +10,7 @@ namespace Test;
 
 unsafe class Program
 {
-    private static IWindow window;
+    private static IWindow window = null!;
 
     private struct Vertex
     {
@@ -20,6 +21,7 @@ unsafe class Program
     static void Main()
     {
         window = new GlfwWindow(GraphicsApi.Vulkan);
+        window.Show();
         var factory = new VulkanBackendFactory();
         using var device = factory.CreateDevice(window, true);
         using var swapchain = device.CreateSwapchain(window);
@@ -60,7 +62,17 @@ unsafe class Program
         while (!window.IsClosing)
         {
             window.PollEvents();
+            if (window.Size.Width <= 0 || window.Size.Height <= 0)
+            {
+                Thread.Sleep(16);
+                continue;
+            }
             var backbuffer = swapchain.AcquireNextImage();
+            if (!backbuffer.IsValid)
+            {
+                Thread.Sleep(16);
+                continue;
+            }
             var graph = device.CreateRenderGraph();
             graph
                 .AddPass("TestPass")

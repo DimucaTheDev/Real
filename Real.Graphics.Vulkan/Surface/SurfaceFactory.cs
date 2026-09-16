@@ -1,3 +1,6 @@
+using System;
+using Silk.NET.Core.Native;
+using Silk.NET.GLFW;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 
@@ -8,6 +11,25 @@ internal static class SurfaceFactory
 {
     public static unsafe SurfaceKHR CreateForWindow(Vk vk, Instance instance, nint handle)
     {
+        // 1. Try GLFW window surface creation if GLFW is active and handle is a GLFW window
+        if (handle != 0)
+        {
+            try
+            {
+                var glfw = Glfw.GetApi();
+                VkNonDispatchableHandle surfaceHandle = default;
+                var result = glfw.CreateWindowSurface(instance.ToHandle(), (WindowHandle*)handle, null, &surfaceHandle);
+                if (result == 0 && surfaceHandle.Handle != 0)
+                {
+                    return surfaceHandle.ToSurface();
+                }
+            }
+            catch
+            {
+                // Fall back to OS-specific surface factory
+            }
+        }
+
         if (OperatingSystem.IsWindows())
         {
             if (!vk.TryGetInstanceExtension<KhrWin32Surface>(instance, out var khrWin32Surface))
@@ -23,9 +45,7 @@ internal static class SurfaceFactory
                 return XlibSurfaceFactory.Create(vk, instance, khrXlibSurface, handle);
 
             throw new PlatformNotSupportedException(
-                "Neither VK_KHR_xlib_surface nor a Wayland surface extension is available on this instance. " +
-                "If targeting Wayland, resolve KhrWaylandSurface here instead and branch on which native " +
-                "handle fields NativeWindowHandle actually populated (X11Display/X11Window vs WaylandDisplay/WaylandSurface).");
+                "Neither VK_KHR_xlib_surface nor a Wayland surface extension is available on this instance.");
         }
 
         throw new PlatformNotSupportedException("No Vulkan surface factory for this OS.");

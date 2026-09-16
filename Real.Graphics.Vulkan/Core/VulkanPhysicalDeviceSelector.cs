@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -11,7 +14,7 @@ namespace Real.Graphics.Vulkan.Core;
 /// </summary>
 internal static class VulkanPhysicalDeviceSelector
 {
-    private static Vk _vk;
+    private static Vk _vk = null!;
 
     public static PhysicalDevice Select(VulkanInstance instance, SurfaceKHR surface)
     {
@@ -21,9 +24,18 @@ internal static class VulkanPhysicalDeviceSelector
         if (!devices.Any())
             throw new Exception("No Vulkan devices found");
 
-        foreach (var dev in GetPhysicalDevices(instance.Handle))
+        if (!instance.Vk.TryGetInstanceExtension<KhrSurface>(instance.Handle, out var khrSurface))
+            throw new InvalidOperationException("VK_KHR_surface is not available on this instance.");
+
+        PhysicalDevice? fallbackDevice = null;
+
+        foreach (var dev in devices)
         {
-            var supports = GetDeviceExtensions(dev).Contains(KhrSwapchain.ExtensionName);
+            var extensions = GetDeviceExtensions(dev);
+            var supportsSwapchain = extensions.Contains(KhrSwapchain.ExtensionName);
+            if (!supportsSwapchain)
+                continue;
+
             List<int> physDeviceGraphicFamilyIndices = [];
             List<int> physDevicePresentationFamilyIndices = [];
             var props = GetDeviceQueueProps(dev);
@@ -31,17 +43,27 @@ internal static class VulkanPhysicalDeviceSelector
             {
                 if ((props[i].QueueFlags & QueueFlags.GraphicsBit) != 0)
                     physDeviceGraphicFamilyIndices.Add(i);
-                physDevicePresentationFamilyIndices.Add(i);
-                i++;
+
+                khrSurface.GetPhysicalDeviceSurfaceSupport(dev, (uint)i, surface, out var presentSupport);
+                if (presentSupport)
+                    physDevicePresentationFamilyIndices.Add(i);
             }
 
-            if (supports && physDevicePresentationFamilyIndices.Any() && physDeviceGraphicFamilyIndices.Any())
+            if (physDevicePresentationFamilyIndices.Any() && physDeviceGraphicFamilyIndices.Any())
             {
-                return dev;
+                // Prefer discrete GPU
+                _vk.GetPhysicalDeviceProperties(dev, out var devProps);
+                if (devProps.DeviceType == PhysicalDeviceType.DiscreteGpu)
+                    return dev;
+
+                fallbackDevice ??= dev;
             }
         }
 
-        throw new Exception("No suitable Vulkan devices found");
+        if (fallbackDevice is not null)
+            return fallbackDevice.Value;
+
+        throw new Exception("No suitable Vulkan devices found that support graphics, presentation, and swapchain.");
     }
 
     static unsafe PhysicalDevice[] GetPhysicalDevices(Instance instance)

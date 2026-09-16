@@ -1,3 +1,4 @@
+using System;
 using Real.Graphics.Rhi;
 using Real.Graphics.Rhi.Descriptors;
 using Real.Graphics.Rhi.Enums;
@@ -8,6 +9,7 @@ using Real.Graphics.Vulkan.Resources;
 using Real.Graphics.Vulkan.Surface;
 using Real.Windowing;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace Real.Graphics.Vulkan;
@@ -27,18 +29,30 @@ public sealed class VulkanDevice : IGraphicsDevice
     private readonly VulkanDebugMessenger? _debugMessenger;
 
     private readonly VulkanMemoryAllocator _memoryAllocator;
+    private readonly VulkanUploadContext _uploadContext;
     private readonly VulkanBufferPool _bufferPool;
     private readonly VulkanTexturePool _texturePool;
+    private readonly VulkanSamplerPool _samplerPool;
     private readonly VulkanShaderCompiler _shaderCompiler;
+    private readonly VulkanShaderPool _shaderPool;
     private readonly VulkanDescriptorAllocator _descriptorAllocator;
     private readonly VulkanRenderPassCache _renderPassCache;
     private readonly VulkanPipelinePool _pipelinePool;
+
+    private VulkanSwapchain? _currentSwapchain;
+    private CommandPool _fallbackCommandPool;
+    private CommandBuffer _fallbackCommandBuffer;
 
     public VulkanDevice(IWindow window, bool enableValidation = false)
     {
         if (window.GraphicsApi != GraphicsApi.Vulkan)
             throw new InvalidOperationException(
                 "VulkanDevice requires a window created with WindowSettings.GraphicsApi = GraphicsApi.Vulkan.");
+
+        if (window.Handle == 0)
+        {
+            window.Show();
+        }
 
         _instance = new VulkanInstance(appName: "RealEngine", enableValidation);
 
@@ -49,17 +63,39 @@ public sealed class VulkanDevice : IGraphicsDevice
 
         if (enableValidation)
         {
-            // TODO: resolve ExtDebugUtils extension, construct _debugMessenger
+            if (_instance.Vk.TryGetInstanceExtension<ExtDebugUtils>(_instance.Handle, out var debugUtils))
+            {
+                _debugMessenger = new VulkanDebugMessenger(_instance.Vk, _instance.Handle, debugUtils);
+            }
         }
 
         _memoryAllocator =
             new VulkanMemoryAllocator(_instance.Vk, _logicalDevice.PhysicalDevice, _logicalDevice.Handle);
-        _bufferPool = new VulkanBufferPool(_instance.Vk, _logicalDevice.Handle, _memoryAllocator);
-        _texturePool = new VulkanTexturePool(_instance.Vk, _logicalDevice.Handle, _memoryAllocator);
+        _uploadContext = new VulkanUploadContext(
+            _instance.Vk,
+            _logicalDevice.Handle,
+            _logicalDevice.Queues.TransferQueue,
+            _logicalDevice.Queues.TransferFamilyIndex);
+
+        _bufferPool = new VulkanBufferPool(
+            _instance.Vk,
+            _logicalDevice.Handle,
+            _memoryAllocator,
+            _logicalDevice.Queues.TransferQueue,
+            _logicalDevice.Queues.TransferFamilyIndex);
+
+        _texturePool = new VulkanTexturePool(
+            _instance.Vk,
+            _logicalDevice.Handle,
+            _memoryAllocator,
+            _uploadContext);
+
+        _samplerPool = new VulkanSamplerPool(_instance.Vk, _logicalDevice.Handle);
         _shaderCompiler = new VulkanShaderCompiler(_instance.Vk, _logicalDevice.Handle);
+        _shaderPool = new VulkanShaderPool(_instance.Vk, _logicalDevice.Handle);
         _descriptorAllocator = new VulkanDescriptorAllocator(_instance.Vk, _logicalDevice.Handle);
         _renderPassCache = new VulkanRenderPassCache(_instance.Vk, _logicalDevice.Handle);
-        _pipelinePool = new VulkanPipelinePool(_instance.Vk, _logicalDevice.Handle, _renderPassCache);
+        _pipelinePool = new VulkanPipelinePool(_instance.Vk, _logicalDevice.Handle, _renderPassCache, _shaderPool);
     }
 
     public BufferHandle CreateBuffer(in BufferDescriptor descriptor, ReadOnlySpan<byte> initialData = default) =>
@@ -72,29 +108,20 @@ public sealed class VulkanDevice : IGraphicsDevice
 
     public void DestroyTexture(TextureHandle handle) => _texturePool.Destroy(handle);
 
-    public SamplerHandle CreateSampler(in SamplerDescriptor descriptor)
-    {
-        // TODO: vk.CreateSampler from descriptor, store in a small sampler pool
-        // (omitted here - same slot-pool pattern as buffers/textures).
-        return SamplerHandle.Invalid;
-    }
+    public SamplerHandle CreateSampler(in SamplerDescriptor descriptor) =>
+        _samplerPool.Create(descriptor);
 
-    public void DestroySampler(SamplerHandle handle)
-    {
-        // TODO
-    }
+    public void DestroySampler(SamplerHandle handle) =>
+        _samplerPool.Destroy(handle);
 
     public ShaderHandle CreateShader(ShaderStage stage, ReadOnlySpan<byte> bytecode, string entryPoint = "main")
     {
         var module = _shaderCompiler.CreateModule(bytecode);
-        // TODO: store (module, stage, entryPoint) in a shader pool, return its handle
-        return ShaderHandle.Invalid;
+        return _shaderPool.Store(module, stage, entryPoint);
     }
 
-    public void DestroyShader(ShaderHandle handle)
-    {
-        // TODO
-    }
+    public void DestroyShader(ShaderHandle handle) =>
+        _shaderPool.Destroy(handle);
 
     public PipelineHandle CreatePipeline(in PipelineDescriptor descriptor) =>
         _pipelinePool.Create(descriptor);
@@ -103,38 +130,105 @@ public sealed class VulkanDevice : IGraphicsDevice
 
     public ISwapchain CreateSwapchain(IWindow window)
     {
-        // TODO: resolve KhrSwapchain extension from _logicalDevice
-        KhrSwapchain khrSwapchain = null!;
-        return new VulkanSwapchain(
+        if (!_instance.Vk.TryGetDeviceExtension<KhrSwapchain>(_instance.Handle, _logicalDevice.Handle, out var khrSwapchain))
+            throw new InvalidOperationException("VK_KHR_swapchain is not available on this device.");
+
+        if (!_instance.Vk.TryGetInstanceExtension<KhrSurface>(_instance.Handle, out var khrSurface))
+            throw new InvalidOperationException("VK_KHR_surface is not available on this instance.");
+
+        var swapchain = new VulkanSwapchain(
             _instance.Vk,
             _logicalDevice,
             khrSwapchain,
+            khrSurface,
             _surface,
             _texturePool,
-            (uint)window.Size.Width, (uint)window.Size.Height);
+            _renderPassCache,
+            _descriptorAllocator,
+            (uint)window.Size.Width,
+            (uint)window.Size.Height);
+
+        _currentSwapchain = swapchain;
+        return swapchain;
     }
 
     public IRenderGraph CreateRenderGraph() =>
         new VulkanRenderGraph(
             _instance.Vk,
-            _logicalDevice.Handle,
+            _logicalDevice,
             _texturePool,
             _pipelinePool,
             _bufferPool,
+            _samplerPool,
             _descriptorAllocator,
-            _renderPassCache);
+            _renderPassCache,
+            () => _currentSwapchain,
+            GetFallbackCommandBuffer);
+
+    private unsafe CommandBuffer GetFallbackCommandBuffer()
+    {
+        if (_fallbackCommandPool.Handle == 0)
+        {
+            var poolInfo = new CommandPoolCreateInfo
+            {
+                SType = StructureType.CommandPoolCreateInfo,
+                Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
+                QueueFamilyIndex = _logicalDevice.Queues.GraphicsFamilyIndex
+            };
+            var poolRes = _instance.Vk.CreateCommandPool(_logicalDevice.Handle, in poolInfo, null, out _fallbackCommandPool);
+            if (poolRes != Result.Success)
+                throw new InvalidOperationException($"vkCreateCommandPool failed: {poolRes}");
+
+            var allocInfo = new CommandBufferAllocateInfo
+            {
+                SType = StructureType.CommandBufferAllocateInfo,
+                CommandPool = _fallbackCommandPool,
+                Level = CommandBufferLevel.Primary,
+                CommandBufferCount = 1
+            };
+            _instance.Vk.AllocateCommandBuffers(_logicalDevice.Handle, in allocInfo, out _fallbackCommandBuffer);
+        }
+
+        return _fallbackCommandBuffer;
+    }
 
     public void WaitIdle()
     {
-        // TODO: _instance.Vk.DeviceWaitIdle(_logicalDevice.Handle);
+        _instance.Vk.DeviceWaitIdle(_logicalDevice.Handle);
     }
 
-    public void Dispose()
+    public unsafe void Dispose()
     {
         WaitIdle();
 
-        // TODO: destroy pools' remaining resources, render pass cache entries,
-        // then _debugMessenger?.Dispose(), _logicalDevice.Dispose(),
-        // destroy _surface, _instance.Dispose()
+        _currentSwapchain?.Dispose();
+        _currentSwapchain = null;
+
+        if (_fallbackCommandPool.Handle != 0)
+        {
+            _instance.Vk.DestroyCommandPool(_logicalDevice.Handle, _fallbackCommandPool, null);
+            _fallbackCommandPool = default;
+            _fallbackCommandBuffer = default;
+        }
+
+        _pipelinePool.Dispose();
+        _shaderPool.Dispose();
+        _samplerPool.Dispose();
+        _descriptorAllocator.Dispose();
+        _renderPassCache.Dispose();
+
+        _texturePool.Dispose();
+        _bufferPool.Dispose();
+        _uploadContext.Dispose();
+
+        _debugMessenger?.Dispose();
+        _logicalDevice.Dispose();
+
+        if (_instance.Vk.TryGetInstanceExtension<KhrSurface>(_instance.Handle, out var khrSurface))
+        {
+            khrSurface.DestroySurface(_instance.Handle, _surface, null);
+        }
+
+        _instance.Dispose();
     }
 }

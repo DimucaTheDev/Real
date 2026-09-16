@@ -8,7 +8,7 @@ namespace Real.Graphics.Vulkan.Resources;
 /// (buffer staging copies, texture staging copies + layout transitions).
 /// Used by both VulkanBufferPool and VulkanTexturePool - not per-frame.
 /// </summary>
-internal sealed class VulkanUploadContext
+internal sealed class VulkanUploadContext : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
@@ -70,5 +70,11 @@ internal sealed class VulkanUploadContext
         _vk.QueueWaitIdle(_queue); // blocking - fine for load-time, not per-frame
 
         _vk.FreeCommandBuffers(_device, _commandPool, 1, in cmd);
+    }
+
+    public unsafe void Dispose()
+    {
+        if (_commandPool.Handle != 0)
+            _vk.DestroyCommandPool(_device, _commandPool, null);
     }
 }

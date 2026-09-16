@@ -9,7 +9,7 @@ namespace Real.Graphics.Vulkan.Resources;
 /// Same slot-pool pattern as VulkanShaderPool - owns VkSampler creation from a
 /// SamplerDescriptor and maps it to the opaque SamplerHandle exposed by the RHI.
 /// </summary>
-internal sealed class VulkanSamplerPool
+internal sealed class VulkanSamplerPool : System.IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
@@ -22,6 +22,23 @@ internal sealed class VulkanSamplerPool
     {
         _vk = vk;
         _device = device;
+
+        // Reserve slot 0 so valid handles always have Id > 0 (SamplerHandle.Invalid is (0, 0))
+        _slots.Add(null);
+        _generations.Add(0);
+    }
+
+    public unsafe void Dispose()
+    {
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (_slots[i] is { } sampler)
+            {
+                _vk.DestroySampler(_device, sampler, null);
+                _slots[i] = null;
+            }
+        }
+        _freeSlots.Clear();
     }
 
     public unsafe SamplerHandle Create(in SamplerDescriptor descriptor)
@@ -73,6 +90,7 @@ internal sealed class VulkanSamplerPool
     };
 
     public bool IsValid(SamplerHandle handle) =>
+        handle.Id != 0 &&
         handle.Id < _slots.Count &&
         _slots[(int)handle.Id] is not null &&
         _generations[(int)handle.Id] == handle.Generation;

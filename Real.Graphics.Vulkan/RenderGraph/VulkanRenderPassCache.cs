@@ -12,7 +12,7 @@ namespace Real.Graphics.Vulkan.RenderGraph;
 /// reuse across pipelines/passes that share the same attachment layout, so we
 /// avoid recreating them every frame.
 /// </summary>
-internal sealed class VulkanRenderPassCache
+internal sealed class VulkanRenderPassCache : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
@@ -46,6 +46,8 @@ internal sealed class VulkanRenderPassCache
         _vk = vk;
         _device = device;
     }
+
+    public void Dispose() => DestroyAll();
 
     public unsafe RenderPass GetOrCreate(TextureFormat[] colorFormats, TextureFormat? depthFormat)
     {
@@ -192,11 +194,16 @@ internal sealed class VulkanRenderPassCache
         }
     }
 
-    public unsafe void DestroyAll()
+    public unsafe void ClearFramebuffers()
     {
         foreach (var framebuffer in _framebuffers.Values)
             _vk.DestroyFramebuffer(_device, framebuffer, null);
         _framebuffers.Clear();
+    }
+
+    public unsafe void DestroyAll()
+    {
+        ClearFramebuffers();
 
         foreach (var renderPass in _renderPasses.Values)
             _vk.DestroyRenderPass(_device, renderPass, null);

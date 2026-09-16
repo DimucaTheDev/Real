@@ -15,6 +15,7 @@ namespace Real.Graphics.Vulkan;
 internal sealed class VulkanCommandList : ICommandList
 {
     private readonly Vk _vk;
+    private readonly Device _device;
     private readonly CommandBuffer _cmd;
     private readonly VulkanPipelinePool _pipelines;
     private readonly VulkanBufferPool _buffers;
@@ -35,6 +36,7 @@ internal sealed class VulkanCommandList : ICommandList
 
     public VulkanCommandList(
         Vk vk,
+        Device device,
         CommandBuffer cmd,
         VulkanPipelinePool pipelines,
         VulkanBufferPool buffers,
@@ -43,6 +45,7 @@ internal sealed class VulkanCommandList : ICommandList
         VulkanDescriptorAllocator descriptorAllocator)
     {
         _vk = vk;
+        _device = device;
         _cmd = cmd;
         _pipelines = pipelines;
         _buffers = buffers;
@@ -66,7 +69,8 @@ internal sealed class VulkanCommandList : ICommandList
     public unsafe void BindVertexBuffer(BufferHandle buffer, uint slot = 0, ulong offset = 0)
     {
         var entry = _buffers.Get(buffer);
-        _vk.CmdBindVertexBuffers(_cmd, slot, 1, in entry.Handle, in offset);
+        var bufferHandle = entry.Handle;
+        _vk.CmdBindVertexBuffers(_cmd, slot, 1, in bufferHandle, in offset);
     }
 
     public void BindIndexBuffer(BufferHandle buffer, ulong offset = 0)
@@ -103,7 +107,7 @@ internal sealed class VulkanCommandList : ICommandList
             PImageInfo = &imageInfo
         };
 
-        _vk.UpdateDescriptorSets(_vk.CurrentDevice!.Value, 1, in write, 0, null);
+        _vk.UpdateDescriptorSets(_device, 1, in write, 0, null);
     }
 
     public unsafe void SetUniformBuffer(uint slot, BufferHandle buffer)
@@ -128,18 +132,20 @@ internal sealed class VulkanCommandList : ICommandList
             PBufferInfo = &bufferInfo
         };
 
-        _vk.UpdateDescriptorSets(_vk.CurrentDevice!.Value, 1, in write, 0, null);
+        _vk.UpdateDescriptorSets(_device, 1, in write, 0, null);
     }
 
     public void SetViewport(float x, float y, float width, float height)
     {
-        var viewport = new Viewport(x, y, width, height, 0f, 1f);
+        float w = width > 0f ? width : 1f;
+        float h = height > 0f ? height : 1f;
+        var viewport = new Viewport(x, y, w, h, 0f, 1f);
         _vk.CmdSetViewport(_cmd, 0, 1, in viewport);
     }
 
     public void SetScissor(int x, int y, uint width, uint height)
     {
-        var scissor = new Rect2D(new Offset2D(x, y), new Extent2D(width, height));
+        var scissor = new Rect2D(new Offset2D(x, y), new Extent2D(Math.Max(1u, width), Math.Max(1u, height)));
         _vk.CmdSetScissor(_cmd, 0, 1, in scissor);
     }
 
@@ -169,7 +175,10 @@ internal sealed class VulkanCommandList : ICommandList
         if (_descriptorSetBound) return;
 
         var set = _currentDescriptorSet;
-        _vk.CmdBindDescriptorSets(_cmd, PipelineBindPoint.Graphics, _currentPipelineLayout, 0, 1, in set, 0, null);
+        if (set.Handle != 0)
+        {
+            _vk.CmdBindDescriptorSets(_cmd, PipelineBindPoint.Graphics, _currentPipelineLayout, 0, 1, in set, 0, null);
+        }
         _descriptorSetBound = true;
     }
 }

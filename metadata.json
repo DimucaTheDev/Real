@@ -1,0 +1,6 @@
+{
+  "name": "RealEngine",
+  "description": "RealEngine Vulkan RHI graphics architecture, render graph pipeline, asset VFS, and interactive engine editor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

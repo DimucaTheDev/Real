@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net11.0</TargetFramework>
@@ -15,5 +15,6 @@
         <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.23.0" PrivateAssets="compile" /><!--PrivateAssets="compile"-->
         <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.23.0" PrivateAssets="compile" /><!--PrivateAssets="compile"-->
         <PackageReference Include="Silk.NET.Vulkan" Version="2.23.0" PrivateAssets="compile" /><!--PrivateAssets="compile"-->
+        <PackageReference Include="Silk.NET.GLFW" Version="2.23.0" PrivateAssets="compile" />
     </ItemGroup>
 </Project>

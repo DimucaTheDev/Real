@@ -31,7 +31,7 @@ internal readonly struct VulkanTextureEntry
 /// current VkImageLayout - this is what VulkanBarrierBuilder reads/updates
 /// when the render graph transitions a texture between passes.
 /// </summary>
-internal sealed class VulkanTexturePool
+internal sealed class VulkanTexturePool : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
@@ -55,6 +55,10 @@ internal sealed class VulkanTexturePool
         _device = device;
         _allocator = allocator;
         _uploadContext = uploadContext;
+
+        // Reserve slot 0 so valid handles always have Id > 0 (TextureHandle.Invalid is (0, 0))
+        _slots.Add(null);
+        _generations.Add(0);
     }
 
     public unsafe TextureHandle Create(in TextureDescriptor descriptor, ReadOnlySpan<byte> initialData)
@@ -299,6 +303,7 @@ internal sealed class VulkanTexturePool
     }
 
     public bool IsValid(TextureHandle handle) =>
+        handle.Id != 0 &&
         handle.Id < _slots.Count &&
         _slots[(int)handle.Id] is not null &&
         _generations[(int)handle.Id] == handle.Generation;
@@ -327,5 +332,25 @@ internal sealed class VulkanTexturePool
         }
 
         return new TextureHandle(id, _generations[(int)id]);
+    }
+
+    public unsafe void Dispose()
+    {
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (_slots[i] is { } entry)
+            {
+                if (entry.View.Handle != 0)
+                    _vk.DestroyImageView(_device, entry.View, null);
+                if (entry.Memory.Handle != 0)
+                {
+                    if (entry.Image.Handle != 0)
+                        _vk.DestroyImage(_device, entry.Image, null);
+                    _allocator.Free(entry.Memory);
+                }
+                _slots[i] = null;
+            }
+        }
+        _freeSlots.Clear();
     }
 }

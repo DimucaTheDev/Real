@@ -29,12 +29,11 @@ internal readonly struct VulkanBufferEntry
 /// Real.Graphics.Rhi to the underlying VkBuffer/VkDeviceMemory pair.
 /// The generation counter catches use-after-destroy at the handle level.
 /// </summary>
-internal sealed class VulkanBufferPool
+internal sealed class VulkanBufferPool : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly VulkanMemoryAllocator _allocator;
-
     // Needed only to upload initialData via a staging buffer at creation time.
     // This is a simple, blocking upload (submit + wait) - fine for load-time
     // resource creation; a non-blocking batched upload queue for runtime resource
@@ -58,6 +57,10 @@ internal sealed class VulkanBufferPool
         _allocator = allocator;
         _transferQueue = transferQueue;
 
+        // Reserve slot 0 so valid handles always have Id > 0 (BufferHandle.Invalid is (0, 0))
+        _slots.Add(null);
+        _generations.Add(0);
+
         var poolInfo = new CommandPoolCreateInfo
         {
             SType = StructureType.CommandPoolCreateInfo,
@@ -68,6 +71,23 @@ internal sealed class VulkanBufferPool
         var result = _vk.CreateCommandPool(_device, in poolInfo, null, out _uploadCommandPool);
         if (result != Result.Success)
             throw new InvalidOperationException($"vkCreateCommandPool (upload) failed: {result}");
+    }
+
+    public unsafe void Dispose()
+    {
+        if (_uploadCommandPool.Handle != 0)
+            _vk.DestroyCommandPool(_device, _uploadCommandPool, null);
+
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            if (_slots[i] is { } entry)
+            {
+                _vk.DestroyBuffer(_device, entry.Handle, null);
+                _allocator.Free(entry.Memory);
+                _slots[i] = null;
+            }
+        }
+        _freeSlots.Clear();
     }
 
     public unsafe BufferHandle Create(in BufferDescriptor descriptor, ReadOnlySpan<byte> initialData)
@@ -138,10 +158,8 @@ internal sealed class VulkanBufferPool
         _vk.UnmapMemory(_device, stagingMemory);
 
         var cmd = BeginOneShotCommandBuffer();
-
         var copyRegion = new BufferCopy { SrcOffset = 0, DstOffset = 0, Size = descriptor.Size };
         _vk.CmdCopyBuffer(cmd, stagingBuffer, destination, 1, in copyRegion);
-
         EndAndSubmitOneShotCommandBuffer(cmd);
 
         // Staging buffer is only needed for the duration of the copy; safe to
@@ -222,6 +240,7 @@ internal sealed class VulkanBufferPool
     }
 
     public bool IsValid(BufferHandle handle) =>
+        handle.Id != 0 &&
         handle.Id < _slots.Count &&
         _slots[(int)handle.Id] is not null &&
         _generations[(int)handle.Id] == handle.Generation;

@@ -1,9 +1,11 @@
+using System;
+using System.Collections.Generic;
 using Silk.NET.Vulkan;
 
 namespace Real.Graphics.Vulkan.Sync;
 
 /// <summary>Reusable pool of VkFence objects to avoid creating one per frame forever.</summary>
-internal sealed class VulkanFencePool
+internal sealed class VulkanFencePool : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
@@ -34,4 +36,14 @@ internal sealed class VulkanFencePool
     }
 
     public void Return(Fence fence) => _available.Push(fence);
+
+    public unsafe void Dispose()
+    {
+        while (_available.Count > 0)
+        {
+            var fence = _available.Pop();
+            if (fence.Handle != 0)
+                _vk.DestroyFence(_device, fence, null);
+        }
+    }
 }

@@ -7,6 +7,8 @@ public enum TextureFormat
     Rg8Unorm,
     Rgba8Unorm,
     Rgba8Srgb,
+    Bgra8Unorm,
+    Bgra8Srgb,
     Rgba16Float,
     Rgba32Float,
     D32Float,
