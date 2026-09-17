@@ -16,13 +16,28 @@ layout (location = 1) in vec3 aColor;
 out vec3 ourColor;
 out vec3 vPos;
 
+// Shader Uniforms (Matrix4x4, float, float)
 uniform mat4 uMVP;
 uniform mat4 uModel;
+uniform float uTime;
+uniform float uAspect;
 
 void main() {
-    gl_Position = uMVP * vec4(aPos, 1.0);
+    if (uMVP[3][3] != 0.0) {
+        gl_Position = uMVP * vec4(aPos, 1.0);
+    } else {
+        float t = uTime;
+        float cy = cos(t * 1.1), sy = sin(t * 1.1);
+        float cx = cos(t * 0.75), sx = sin(t * 0.75);
+        mat3 rotY = mat3(cy, 0.0, sy, 0.0, 1.0, 0.0, -sy, 0.0, cy);
+        mat3 rotX = mat3(1.0, 0.0, 0.0, 0.0, cx, -sx, 0.0, sx, cx);
+        vec3 rotated = rotX * (rotY * (aPos * 0.7));
+        float zDist = rotated.z * 0.4 + 1.8;
+        float aspect = (uAspect > 0.01) ? uAspect : 1.0;
+        gl_Position = vec4(rotated.x / (zDist * aspect), rotated.y / zDist, rotated.z * 0.2 + 0.5, 1.0);
+    }
     ourColor = aColor;
-    vPos = (uModel * vec4(aPos, 1.0)).xyz;
+    vPos = aPos;
 }`);
 
   const [fragCode, setFragCode] = useState(`#version 300 es
@@ -279,6 +294,33 @@ void main() {
             <div className="flex justify-between">
               <span className="text-neutral-500">Entry Point:</span>
               <span className="text-neutral-200">"main"</span>
+            </div>
+          </div>
+
+          <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800 space-y-2">
+            <div className="text-neutral-400 text-[11px] uppercase tracking-wider font-semibold flex items-center justify-between">
+              <span>Shader Uniform Parameters</span>
+              <span className="text-amber-400 text-[10px]">ICommandList</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-500">uMVP (Matrix4x4):</span>
+              <span className="text-neutral-200">64B (std140 / PushConstant @ 0)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-500">uTime (float):</span>
+              <span className="text-neutral-200">4B (PushConstant @ 64)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-500">uAspect (float):</span>
+              <span className="text-neutral-200">4B (PushConstant @ 68)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-500">uResolution (Vector2):</span>
+              <span className="text-neutral-200">8B (PushConstant @ 72)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-neutral-500">uLighting (int/bool):</span>
+              <span className="text-neutral-200">4B (PushConstant @ 80)</span>
             </div>
           </div>
         </div>

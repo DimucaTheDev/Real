@@ -24,7 +24,14 @@ unsafe class Program
 
     static void Main(string[] args)
     {
-        Console.WriteLine("FMOD: " + SoundTest.Test());
+        try
+        {
+            Console.WriteLine("FMOD: " + SoundTest.Test());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("FMOD: (disabled - " + ex.Message + ")");
+        }
 
         var api = Enum.Parse<GraphicsApi>(args.FirstOrDefault("vulkan")!, true);
         window = new GlfwWindow(api);
@@ -117,6 +124,8 @@ unsafe class Program
                 ]
             },
         });
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
         while (!window.IsClosing)
         {
             window.PollEvents();
@@ -133,6 +142,27 @@ unsafe class Program
                 continue;
             }
 
+            float time = (float)stopwatch.Elapsed.TotalSeconds;
+            float aspect = (float)window.Size.Width / Math.Max(1f, window.Size.Height);
+
+            // Compute dynamic 3D transformation matrices
+            var model = System.Numerics.Matrix4x4.CreateRotationX(time * 0.75f) *
+                        System.Numerics.Matrix4x4.CreateRotationY(time * 1.10f) *
+                        System.Numerics.Matrix4x4.CreateRotationZ(time * 0.35f);
+
+            var view = System.Numerics.Matrix4x4.CreateLookAt(
+                new System.Numerics.Vector3(0, 0, 2.5f),
+                System.Numerics.Vector3.Zero,
+                System.Numerics.Vector3.UnitY);
+
+            var proj = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView(
+                (float)(45.0 * Math.PI / 180.0),
+                aspect,
+                0.1f,
+                100.0f);
+
+            var mvp = model * view * proj;
+
             var graph = device.CreateRenderGraph();
             graph
                 .AddPass("TestPass")
@@ -144,6 +174,14 @@ unsafe class Program
 
                     cmd.BindPipeline(pipeline);
                     cmd.BindVertexBuffer(vertexBuffer);
+
+                    // Set uniforms of various types
+                    cmd.SetUniform("uMVP", in mvp, transpose: true);
+                    cmd.SetUniform("uTime", time);
+                    cmd.SetUniform("uAspect", aspect);
+                    cmd.SetUniform("uResolution", new System.Numerics.Vector2(window.Size.Width, window.Size.Height));
+                    cmd.SetUniform("uLighting", 1);
+
                     cmd.Draw(vertexCount: 36);
                 });
             graph.Execute();

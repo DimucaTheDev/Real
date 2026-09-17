@@ -739,10 +739,14 @@ void main() {
     const uMVPLoc = gl.getUniformLocation(this.program, 'uMVP');
     const uModelLoc = gl.getUniformLocation(this.program, 'uModel');
     const uLightingLoc = gl.getUniformLocation(this.program, 'uLighting');
+    const uTimeLoc = gl.getUniformLocation(this.program, 'uTime');
+    const uAspectLoc = gl.getUniformLocation(this.program, 'uAspect');
 
     if (uMVPLoc) gl.uniformMatrix4fv(uMVPLoc, false, mvp);
     if (uModelLoc) gl.uniformMatrix4fv(uModelLoc, false, model);
     if (uLightingLoc) gl.uniform1i(uLightingLoc, this.lightingEnabled);
+    if (uTimeLoc) gl.uniform1f(uTimeLoc, now * 0.001);
+    if (uAspectLoc) gl.uniform1f(uAspectLoc, aspect);
 
     // Draw cube according to topology
     gl.bindVertexArray(this.vao);

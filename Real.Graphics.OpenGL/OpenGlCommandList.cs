@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Numerics;
 using Real.Graphics.OpenGL.Resources;
 using Real.Graphics.OpenGL.Translation;
 using Real.Graphics.Rhi;
@@ -14,6 +16,7 @@ internal sealed class OpenGlCommandList : ICommandList
     private readonly OpenGlBufferPool _buffers;
     private readonly OpenGlTexturePool _textures;
     private readonly OpenGlSamplerPool _samplers;
+    private readonly Dictionary<(uint Program, string Name), int> _uniformLocationCache = new();
 
     private OpenGlPipelineEntry _currentPipeline;
     private bool _hasPipeline;
@@ -114,6 +117,114 @@ internal sealed class OpenGlCommandList : ICommandList
     {
         // Modern OpenGL push constant emulation
         // Can be forwarded via uniform buffers or program uniforms
+    }
+
+    private int GetUniformLocation(string name)
+    {
+        if (!_hasPipeline) return -1;
+        uint program = _currentPipeline.Program;
+        if (_uniformLocationCache.TryGetValue((program, name), out int loc))
+            return loc;
+
+        loc = _gl.GetUniformLocation(program, name);
+        _uniformLocationCache[(program, name)] = loc;
+        return loc;
+    }
+
+    public void SetUniform(string name, int value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform1(loc, value);
+    }
+
+    public void SetUniform(string name, uint value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform1(loc, value);
+    }
+
+    public void SetUniform(string name, float value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform1(loc, value);
+    }
+
+    public void SetUniform(string name, bool value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform1(loc, value ? 1 : 0);
+    }
+
+    public void SetUniform(string name, Vector2 value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform2(loc, value.X, value.Y);
+    }
+
+    public void SetUniform(string name, float x, float y)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform2(loc, x, y);
+    }
+
+    public void SetUniform(string name, Vector3 value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform3(loc, value.X, value.Y, value.Z);
+    }
+
+    public void SetUniform(string name, float x, float y, float z)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform3(loc, x, y, z);
+    }
+
+    public void SetUniform(string name, Vector4 value)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform4(loc, value.X, value.Y, value.Z, value.W);
+    }
+
+    public void SetUniform(string name, float x, float y, float z, float w)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1) _gl.Uniform4(loc, x, y, z, w);
+    }
+
+    public unsafe void SetUniform(string name, in Matrix4x4 value, bool transpose = false)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1)
+        {
+            fixed (float* p = &value.M11)
+            {
+                _gl.UniformMatrix4(loc, 1, transpose, p);
+            }
+        }
+    }
+
+    public unsafe void SetUniform(string name, ReadOnlySpan<float> values)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1 && values.Length > 0)
+        {
+            fixed (float* p = values)
+            {
+                _gl.Uniform1(loc, (uint)values.Length, p);
+            }
+        }
+    }
+
+    public unsafe void SetUniform(string name, ReadOnlySpan<int> values)
+    {
+        int loc = GetUniformLocation(name);
+        if (loc != -1 && values.Length > 0)
+        {
+            fixed (int* p = values)
+            {
+                _gl.Uniform1(loc, (uint)values.Length, p);
+            }
+        }
     }
 
     public void Draw(uint vertexCount, uint instanceCount = 1, uint firstVertex = 0)
