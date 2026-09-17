@@ -92,6 +92,14 @@ public sealed class OpenGlDevice : IGraphicsDevice
         }));
 
         _gl.Enable(EnableCap.FramebufferSrgb);
+        try
+        {
+            _gl.ClipControl(ClipControlOrigin.UpperLeft, ClipControlDepth.ZeroToOne);
+        }
+        catch
+        {
+            // ClipControl requires OpenGL 4.5+ or ARB_clip_control
+        }
         
         if (enableValidation)
         {
