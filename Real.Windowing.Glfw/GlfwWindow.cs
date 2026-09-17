@@ -192,9 +192,28 @@ public unsafe class GlfwWindow : IWindow
         _glfw.WindowHint(WindowHintBool.Visible, false);
         _glfw.WindowHint(WindowHintBool.Resizable, Border == WindowBorder.Resizable);
         _glfw.WindowHint(WindowHintBool.Decorated, Border != WindowBorder.Hidden);
-        _glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
 
-        _handle = _glfw.CreateWindow(Size.Width, Size.Height, Title, null, null);
+        if (GraphicsApi == GraphicsApi.OpenGl)
+        {
+            _glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.OpenGL);
+            _glfw.WindowHint(WindowHintOpenGlProfile.OpenGlProfile, OpenGlProfile.Core);
+            _glfw.WindowHint(WindowHintBool.OpenGLForwardCompat, true);
+
+            (int Major, int Minor)[] versions = [(4, 6), (4, 5), (4, 3), (4, 1), (3, 3)];
+            foreach (var (major, minor) in versions)
+            {
+                _glfw.WindowHint(WindowHintInt.ContextVersionMajor, major);
+                _glfw.WindowHint(WindowHintInt.ContextVersionMinor, minor);
+                _handle = _glfw.CreateWindow(Size.Width, Size.Height, Title, null, null);
+                if (_handle != null) break;
+            }
+        }
+        else
+        {
+            _glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
+            _handle = _glfw.CreateWindow(Size.Width, Size.Height, Title, null, null);
+        }
+
         if (_handle == null)
         {
             throw new SystemException("Unable to create GLFW window");

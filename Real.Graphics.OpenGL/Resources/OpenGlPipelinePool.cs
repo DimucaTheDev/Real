@@ -65,25 +65,6 @@ internal sealed class OpenGlPipelinePool : IDisposable
 
         // Create Vertex Array Object (VAO)
         _gl.GenVertexArrays(1, out uint vao);
-        _gl.BindVertexArray(vao);
-        if (descriptor.VertexLayout.Attributes != null)
-        {
-            foreach (var attr in descriptor.VertexLayout.Attributes)
-            {
-                _gl.EnableVertexAttribArray(attr.Location);
-                var (size, type, normalized) = GlFormatMap.ToVertexAttrib(attr.Format);
-                try
-                {
-                    _gl.VertexAttribFormat(attr.Location, size, type, normalized, attr.Offset);
-                    _gl.VertexAttribBinding(attr.Location, 0);
-                }
-                catch
-                {
-                    // Fallback if ARB_vertex_attrib_binding is not supported
-                }
-            }
-        }
-        _gl.BindVertexArray(0);
 
         var topology = GlTopologyTranslator.ToGl(descriptor.Topology);
         var entry = new OpenGlPipelineEntry(program, vao, descriptor, topology);

@@ -70,15 +70,6 @@ internal sealed class OpenGlCommandList : ICommandList
                     (void*)(offset + attr.Offset));
             }
         }
-
-        try
-        {
-            _gl.BindVertexBuffer(slot, entry.Handle, (nint)offset, stride);
-        }
-        catch
-        {
-            // Fallback for drivers that don't support glBindVertexBuffer
-        }
     }
 
     public void BindIndexBuffer(BufferHandle buffer, ulong offset = 0)

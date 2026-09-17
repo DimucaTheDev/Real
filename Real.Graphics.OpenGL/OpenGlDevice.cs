@@ -28,6 +28,7 @@ public sealed class OpenGlDevice : IGraphicsDevice
     private readonly OpenGlFramebufferCache _framebufferCache;
 
     private OpenGlSwapchain? _currentSwapchain;
+    private DebugProc? _debugCallback;
 
     public unsafe OpenGlDevice(IWindow window, bool enableValidation = false)
     {
@@ -96,6 +97,12 @@ public sealed class OpenGlDevice : IGraphicsDevice
             {
                 _gl.Enable(EnableCap.DebugOutput);
                 _gl.Enable(EnableCap.DebugOutputSynchronous);
+                _debugCallback = (source, type, id, severity, length, message, userParam) =>
+                {
+                    string msg = Marshal.PtrToStringAnsi(message, length);
+                    Console.WriteLine($"[OpenGL Debug ({severity})] {msg}");
+                };
+                _gl.DebugMessageCallback(_debugCallback, null);
             }
             catch
             {
