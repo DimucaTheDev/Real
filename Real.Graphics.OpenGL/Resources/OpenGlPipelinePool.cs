@@ -63,10 +63,6 @@ internal sealed class OpenGlPipelinePool : IDisposable
             throw new InvalidOperationException($"Failed to link OpenGL program '{descriptor.DebugName}': {infoLog}");
         }
 
-        // Detach shaders after linking
-        _gl.DetachShader(program, vs.ShaderId);
-        _gl.DetachShader(program, fs.ShaderId);
-
         // Create Vertex Array Object (VAO)
         _gl.GenVertexArrays(1, out uint vao);
         _gl.BindVertexArray(vao);
@@ -76,11 +72,17 @@ internal sealed class OpenGlPipelinePool : IDisposable
             {
                 _gl.EnableVertexAttribArray(attr.Location);
                 var (size, type, normalized) = GlFormatMap.ToVertexAttrib(attr.Format);
-                _gl.VertexAttribFormat(attr.Location, size, type, normalized, attr.Offset);
-                _gl.VertexAttribBinding(attr.Location, 0);
+                try
+                {
+                    _gl.VertexAttribFormat(attr.Location, size, type, normalized, attr.Offset);
+                    _gl.VertexAttribBinding(attr.Location, 0);
+                }
+                catch
+                {
+                    // Fallback if ARB_vertex_attrib_binding is not supported
+                }
             }
         }
-        _gl.VertexBindingDivisor(0, 0);
         _gl.BindVertexArray(0);
 
         var topology = GlTopologyTranslator.ToGl(descriptor.Topology);

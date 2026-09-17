@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Real.Graphics.OpenGL.RenderGraph;
 using Real.Graphics.OpenGL.Resources;
 using Real.Graphics.Rhi;
@@ -62,7 +63,32 @@ public sealed class OpenGlDevice : IGraphicsDevice
             }
         }
 
-        _gl = GL.GetApi(new LamdaNativeContext(proc => (nint)_glfw.GetProcAddress(proc)));
+        _gl = GL.GetApi(new LamdaNativeContext(proc =>
+        {
+            var addr = (nint)_glfw.GetProcAddress(proc);
+            if (addr == 0)
+            {
+                try
+                {
+                    if (OperatingSystem.IsWindows() && NativeLibrary.TryLoad("opengl32.dll", out var libWin))
+                    {
+                        NativeLibrary.TryGetExport(libWin, proc, out addr);
+                    }
+                    else if (OperatingSystem.IsLinux())
+                    {
+                        if (NativeLibrary.TryLoad("libGL.so.1", out var libLin) || NativeLibrary.TryLoad("libGL.so", out libLin))
+                        {
+                            NativeLibrary.TryGetExport(libLin, proc, out addr);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore fallback failure
+                }
+            }
+            return addr;
+        }));
 
         if (enableValidation)
         {

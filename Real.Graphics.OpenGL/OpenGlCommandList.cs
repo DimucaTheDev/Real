@@ -46,13 +46,39 @@ internal sealed class OpenGlCommandList : ICommandList
         GlDepthStencilTranslator.Apply(_gl, _currentPipeline.Descriptor.DepthStencil);
     }
 
-    public void BindVertexBuffer(BufferHandle buffer, uint slot = 0, ulong offset = 0)
+    public unsafe void BindVertexBuffer(BufferHandle buffer, uint slot = 0, ulong offset = 0)
     {
         if (!_hasPipeline) return;
 
         var entry = _buffers.Get(buffer);
         uint stride = _currentPipeline.Descriptor.VertexLayout.Stride;
-        _gl.BindVertexBuffer(slot, entry.Handle, (nint)offset, stride);
+
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, entry.Handle);
+
+        if (_currentPipeline.Descriptor.VertexLayout.Attributes != null)
+        {
+            foreach (var attr in _currentPipeline.Descriptor.VertexLayout.Attributes)
+            {
+                _gl.EnableVertexAttribArray(attr.Location);
+                var (size, type, normalized) = GlFormatMap.ToVertexAttrib(attr.Format);
+                _gl.VertexAttribPointer(
+                    attr.Location,
+                    size,
+                    (GLEnum)type,
+                    normalized,
+                    stride,
+                    (void*)(offset + attr.Offset));
+            }
+        }
+
+        try
+        {
+            _gl.BindVertexBuffer(slot, entry.Handle, (nint)offset, stride);
+        }
+        catch
+        {
+            // Fallback for drivers that don't support glBindVertexBuffer
+        }
     }
 
     public void BindIndexBuffer(BufferHandle buffer, ulong offset = 0)

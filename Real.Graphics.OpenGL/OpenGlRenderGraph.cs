@@ -58,7 +58,16 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
             uint width = swapchain?.Width ?? 1280;
             uint height = swapchain?.Height ?? 720;
 
-            if (pass.ColorWrites.Count > 0 || pass.DepthWrite != null)
+            bool writesToSwapchain = swapchain != null && pass.ColorWrites.Contains(swapchain.BackbufferHandle);
+
+            if (writesToSwapchain)
+            {
+                // Directly render to default framebuffer (0) for swapchain backbuffer
+                fbo = 0;
+                width = swapchain!.Width;
+                height = swapchain!.Height;
+            }
+            else if (pass.ColorWrites.Count > 0 || pass.DepthWrite != null)
             {
                 fbo = _framebufferCache.GetOrCreate(pass.ColorWrites, pass.DepthWrite);
                 if (pass.ColorWrites.Count > 0)
@@ -76,32 +85,39 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
             }
 
             _gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
+            if (fbo == 0)
+            {
+                _gl.DrawBuffer(DrawBufferMode.Back);
+            }
+
+            // Disable scissor test to ensure clear fills the entire buffer
+            _gl.Disable(EnableCap.ScissorTest);
             _gl.Viewport(0, 0, Math.Max(1u, width), Math.Max(1u, height));
 
-            if (fbo != 0)
+            _gl.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            ClearBufferMask clearMask = ClearBufferMask.None;
+            if (pass.ColorWrites.Count > 0) clearMask |= ClearBufferMask.ColorBufferBit;
+            if (pass.DepthWrite != null)
             {
-                _gl.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-                ClearBufferMask clearMask = ClearBufferMask.None;
-                if (pass.ColorWrites.Count > 0) clearMask |= ClearBufferMask.ColorBufferBit;
-                if (pass.DepthWrite != null)
-                {
-                    clearMask |= ClearBufferMask.DepthBufferBit;
-                    _gl.ClearDepth(1.0);
-                }
+                clearMask |= ClearBufferMask.DepthBufferBit;
+                _gl.ClearDepth(1.0);
+            }
 
-                if (clearMask != ClearBufferMask.None)
-                {
-                    _gl.Clear(clearMask);
-                }
+            if (clearMask != ClearBufferMask.None)
+            {
+                _gl.Clear(clearMask);
             }
 
             pass.Execution?.Invoke(cmd);
 
-            // If this pass rendered to the swapchain backbuffer, blit to the default framebuffer (0)
-            if (swapchain != null && pass.ColorWrites.Contains(swapchain.BackbufferHandle))
+            // If an offscreen pass was used targeting the backbuffer, blit to default framebuffer (0)
+            if (!writesToSwapchain && swapchain != null && pass.ColorWrites.Contains(swapchain.BackbufferHandle))
             {
+                _gl.Disable(EnableCap.ScissorTest);
                 _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fbo);
+                _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
                 _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+                _gl.DrawBuffer(DrawBufferMode.Back);
                 _gl.BlitFramebuffer(
                     0, 0, (int)width, (int)height,
                     0, 0, (int)swapchain.Width, (int)swapchain.Height,
