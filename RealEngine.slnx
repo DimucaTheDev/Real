@@ -7,6 +7,7 @@
     <Project Path="Real/Real.csproj" />
   </Folder>
   <Folder Name="/Engine/Rendering/">
+    <Project Path="Real.Graphics.OpenGL/Real.Graphics.OpenGL.csproj" />
     <Project Path="Real.Graphics.Vulkan/Real.Graphics.Vulkan.csproj" />
   </Folder>
   <Folder Name="/Engine/Windowing/">

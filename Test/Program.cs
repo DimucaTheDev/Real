@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Threading;
+using Real.Graphics.OpenGL;
 using Real.Graphics.Rhi.Descriptors;
 using Real.Graphics.Rhi.Enums;
 using Real.Graphics.Vulkan;
@@ -20,9 +21,9 @@ unsafe class Program
 
     static void Main()
     {
-        window = new GlfwWindow(GraphicsApi.Vulkan);
+        window = new GlfwWindow(GraphicsApi.OpenGl);
         window.Show();
-        var factory = new VulkanBackendFactory();
+        var factory = new OpenGlBackendFactory();
         using var device = factory.CreateDevice(window, true);
         using var swapchain = device.CreateSwapchain(window);
         ReadOnlySpan<Vertex> triangle =
@@ -36,8 +37,8 @@ unsafe class Program
                 Size: (ulong)(triangle.Length * Marshal.SizeOf<Vertex>()),
                 Usage: BufferUsage.Vertex,
                 DebugName: "TriangleVertexBuffer"), MemoryMarshal.AsBytes(triangle));
-        var vertexShader = device.CreateShader(ShaderStage.Vertex, File.ReadAllBytes("shaders/main.vert.spv"));
-        var fragmentShader = device.CreateShader(ShaderStage.Fragment, File.ReadAllBytes("shaders/main.frag.spv"));
+        var vertexShader = device.CreateShader(ShaderStage.Vertex, File.ReadAllBytes("shaders/main.vert"));
+        var fragmentShader = device.CreateShader(ShaderStage.Fragment, File.ReadAllBytes("shaders/main.frag"));
         var pipeline = device.CreatePipeline(new PipelineDescriptor()
         {
             VertexShader = vertexShader,

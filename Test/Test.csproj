@@ -10,6 +10,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Real.Graphics.OpenGL\Real.Graphics.OpenGL.csproj" />
       <ProjectReference Include="..\Real.Graphics.Vulkan\Real.Graphics.Vulkan.csproj" />
       <ProjectReference Include="..\Real.Windowing.Glfw\Real.Windowing.Glfw.csproj" />
       <ProjectReference Include="..\Real\Real.csproj" />
@@ -21,6 +22,12 @@
       </None>
       <None Update="shaders\main.vert.spv">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+      <None Update="shaders\main.frag">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+      <None Update="shaders\main.vert">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
     </ItemGroup>
 

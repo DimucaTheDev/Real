@@ -32,7 +32,7 @@ internal sealed class OpenGlTexturePool : IDisposable
     public OpenGlTexturePool(GL gl)
     {
         _gl = gl;
-
+        
         // Reserve slot 0 so valid handles always have Id > 0 (TextureHandle.Invalid is (0, 0))
         _slots.Add(null);
         _generations.Add(0);
