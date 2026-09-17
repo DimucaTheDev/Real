@@ -19,7 +19,7 @@ public unsafe class GlfwWindow : IWindow
                 _glfw.SetWindowTitle(_handle, field);
             }
         }
-    } = "GLFW Window";
+    }
 
     public WindowPosition Position
     {
@@ -144,6 +144,8 @@ public unsafe class GlfwWindow : IWindow
         _focusCallback = OnWindowFocusChanged;
         _closeCallback = OnWindowClosing;
         _dropCallback = OnFilesDropped;
+
+        Title = $"GLFW Window ({api})";
     }
 
     public void Show()

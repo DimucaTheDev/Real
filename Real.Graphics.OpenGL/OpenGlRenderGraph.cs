@@ -94,7 +94,7 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
             _gl.Disable(EnableCap.ScissorTest);
             _gl.Viewport(0, 0, Math.Max(1u, width), Math.Max(1u, height));
 
-            _gl.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            _gl.ClearColor(0, 0, 0, 1.0f);
             ClearBufferMask clearMask = ClearBufferMask.None;
             if (pass.ColorWrites.Count > 0) clearMask |= ClearBufferMask.ColorBufferBit;
             if (pass.DepthWrite != null)

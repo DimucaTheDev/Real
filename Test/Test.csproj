@@ -17,12 +17,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Update="shaders\main.frag.spv">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-      <None Update="shaders\main.vert.spv">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
       <None Update="shaders\main.frag">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>

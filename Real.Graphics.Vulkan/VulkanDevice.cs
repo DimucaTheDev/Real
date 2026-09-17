@@ -116,7 +116,7 @@ public sealed class VulkanDevice : IGraphicsDevice
 
     public ShaderHandle CreateShader(ShaderStage stage, ReadOnlySpan<byte> bytecode, string entryPoint = "main")
     {
-        var module = _shaderCompiler.CreateModule(bytecode);
+        var module = _shaderCompiler.CreateModule(bytecode, stage, entryPoint);
         return _shaderPool.Store(module, stage, entryPoint);
     }
 
@@ -130,7 +130,8 @@ public sealed class VulkanDevice : IGraphicsDevice
 
     public ISwapchain CreateSwapchain(IWindow window)
     {
-        if (!_instance.Vk.TryGetDeviceExtension<KhrSwapchain>(_instance.Handle, _logicalDevice.Handle, out var khrSwapchain))
+        if (!_instance.Vk.TryGetDeviceExtension<KhrSwapchain>(_instance.Handle, _logicalDevice.Handle,
+                out var khrSwapchain))
             throw new InvalidOperationException("VK_KHR_swapchain is not available on this device.");
 
         if (!_instance.Vk.TryGetInstanceExtension<KhrSurface>(_instance.Handle, out var khrSurface))
@@ -175,7 +176,8 @@ public sealed class VulkanDevice : IGraphicsDevice
                 Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
                 QueueFamilyIndex = _logicalDevice.Queues.GraphicsFamilyIndex
             };
-            var poolRes = _instance.Vk.CreateCommandPool(_logicalDevice.Handle, in poolInfo, null, out _fallbackCommandPool);
+            var poolRes =
+                _instance.Vk.CreateCommandPool(_logicalDevice.Handle, in poolInfo, null, out _fallbackCommandPool);
             if (poolRes != Result.Success)
                 throw new InvalidOperationException($"vkCreateCommandPool failed: {poolRes}");
 

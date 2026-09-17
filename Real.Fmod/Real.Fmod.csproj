@@ -21,13 +21,13 @@
         <None Include="native\$(_NativeArch)\fmodL.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            <TargetPath>engine\natives\fmod.dll</TargetPath>
+            <TargetPath>fmod.dll</TargetPath>
             <Visible>false</Visible>
         </None>
         <None Include="native\$(_NativeArch)\fmodstudioL.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            <TargetPath>engine\natives\fmodstudio.dll</TargetPath>
+            <TargetPath>fmodstudio.dll</TargetPath>
             <Visible>false</Visible>
         </None>
     </ItemGroup>
@@ -37,13 +37,13 @@
         <None Include="native\$(_NativeArch)\fmod.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            <TargetPath>engine\natives\fmod.dll</TargetPath>
+            <TargetPath>fmod.dll</TargetPath>
             <Visible>false</Visible>
         </None>
         <None Include="native\$(_NativeArch)\fmodstudio.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
             <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-            <TargetPath>engine\natives\fmodstudio.dll</TargetPath>
+            <TargetPath>fmodstudio.dll</TargetPath>
             <Visible>false</Visible>
         </None>
     </ItemGroup>    

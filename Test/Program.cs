@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Real.Graphics.OpenGL;
+using Real.Graphics.Rhi;
 using Real.Graphics.Rhi.Descriptors;
 using Real.Graphics.Rhi.Enums;
 using Real.Graphics.Vulkan;
@@ -19,12 +21,17 @@ unsafe class Program
         public float R, G, B;
     }
 
-    static void Main()
+    static void Main(string[] args)
     {
-        window = new GlfwWindow(GraphicsApi.OpenGl);
-        window.Show();
-        var factory = new OpenGlBackendFactory();
-        using var device = factory.CreateDevice(window, true);
+        var api = Enum.Parse<GraphicsApi>(args.FirstOrDefault("vulkan")!, true);
+        window = new GlfwWindow(api);
+        IGraphicsBackendFactory factory = api switch
+        {
+            GraphicsApi.OpenGl => new OpenGlBackendFactory(),
+            GraphicsApi.Vulkan => new VulkanBackendFactory(),
+            _ => throw new()
+        };
+        using var device = factory.CreateDevice(window, Debugger.IsAttached);
         using var swapchain = device.CreateSwapchain(window);
         ReadOnlySpan<Vertex> triangle =
         [
@@ -68,12 +75,14 @@ unsafe class Program
                 Thread.Sleep(16);
                 continue;
             }
+
             var backbuffer = swapchain.AcquireNextImage();
             if (!backbuffer.IsValid)
             {
                 Thread.Sleep(16);
                 continue;
             }
+
             var graph = device.CreateRenderGraph();
             graph
                 .AddPass("TestPass")

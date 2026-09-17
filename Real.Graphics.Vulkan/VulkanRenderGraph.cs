@@ -102,16 +102,21 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
             foreach (var read in pass.ReadTextures)
             {
                 if (!_textures.IsValid(read))
-                    throw new InvalidOperationException($"Read texture handle {read} in pass '{pass.Name}' is not a valid texture.");
+                    throw new InvalidOperationException(
+                        $"Read texture handle {read} in pass '{pass.Name}' is not a valid texture.");
             }
+
             foreach (var write in pass.ColorWrites)
             {
                 if (!_textures.IsValid(write))
-                    throw new InvalidOperationException($"Color write attachment handle {write} in pass '{pass.Name}' is not a valid texture.");
+                    throw new InvalidOperationException(
+                        $"Color write attachment handle {write} in pass '{pass.Name}' is not a valid texture.");
             }
+
             if (pass.DepthWrite is { } depthWrite && !_textures.IsValid(depthWrite))
             {
-                throw new InvalidOperationException($"Depth write attachment handle {depthWrite} in pass '{pass.Name}' is not a valid texture.");
+                throw new InvalidOperationException(
+                    $"Depth write attachment handle {depthWrite} in pass '{pass.Name}' is not a valid texture.");
             }
 
             InsertBarriersForPass(cmd, pass);
@@ -132,6 +137,7 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
                     height = tex.Descriptor.Height;
                 }
             }
+
             if (pass.DepthWrite is { } depth)
             {
                 var tex = _textures.Get(depth);
@@ -150,7 +156,7 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
             {
                 clearValues[i] = new ClearValue
                 {
-                    Color = new ClearColorValue(0.1f, 0.1f, 0.1f, 1f)
+                    Color = new ClearColorValue(0, 0, 0, 1f)
                 };
             }
 
