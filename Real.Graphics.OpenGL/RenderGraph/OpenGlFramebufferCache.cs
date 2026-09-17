@@ -33,12 +33,12 @@ internal sealed class OpenGlFramebufferCache : IDisposable
         if (fbo == 0)
             throw new InvalidOperationException("Failed to create OpenGL framebuffer.");
 
-        var drawBuffers = new DrawBufferMode[colorWrites.Count];
+        var drawBuffers = new GLEnum[colorWrites.Count];
         for (int i = 0; i < colorWrites.Count; i++)
         {
             var tex = _textures.Get(colorWrites[i]);
             _gl.NamedFramebufferTexture(fbo, FramebufferAttachment.ColorAttachment0 + i, tex.Handle, 0);
-            drawBuffers[i] = DrawBufferMode.ColorAttachment0 + i;
+            drawBuffers[i] = GLEnum.ColorAttachment0 + i;
         }
 
         if (depthWrite is { } depthHandle)
@@ -54,15 +54,15 @@ internal sealed class OpenGlFramebufferCache : IDisposable
 
         if (drawBuffers.Length > 0)
         {
-            fixed (DrawBufferMode* pDrawBuffers = drawBuffers)
+            fixed (GLEnum* pDrawBuffers = drawBuffers)
             {
                 _gl.NamedFramebufferDrawBuffers(fbo, (uint)drawBuffers.Length, pDrawBuffers);
             }
         }
         else
         {
-            _gl.NamedFramebufferDrawBuffer(fbo, DrawBufferMode.None);
-            _gl.NamedFramebufferReadBuffer(fbo, ReadBufferMode.None);
+            _gl.NamedFramebufferDrawBuffer(fbo, GLEnum.None);
+            _gl.NamedFramebufferReadBuffer(fbo, GLEnum.None);
         }
 
         var status = _gl.CheckNamedFramebufferStatus(fbo, FramebufferTarget.Framebuffer);
