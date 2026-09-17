@@ -31,6 +31,7 @@ internal sealed class OpenGlPipelinePool : IDisposable
     private readonly List<OpenGlPipelineEntry?> _slots = new();
     private readonly List<uint> _generations = new();
     private readonly Queue<uint> _freeSlots = new();
+    private readonly Dictionary<(uint Program, string Name), int> _uniformLocationCache = new();
 
     public OpenGlPipelinePool(GL gl, OpenGlShaderPool shaderPool)
     {
@@ -92,6 +93,17 @@ internal sealed class OpenGlPipelinePool : IDisposable
         var entry = _slots[(int)handle.Id]!.Value;
         if (entry.Program != 0)
         {
+            var keysToRemove = new List<(uint Program, string Name)>();
+            foreach (var key in _uniformLocationCache.Keys)
+            {
+                if (key.Program == entry.Program)
+                    keysToRemove.Add(key);
+            }
+            foreach (var key in keysToRemove)
+            {
+                _uniformLocationCache.Remove(key);
+            }
+
             _gl.DeleteProgram(entry.Program);
         }
         if (entry.Vao != 0)
@@ -103,6 +115,17 @@ internal sealed class OpenGlPipelinePool : IDisposable
         _slots[(int)handle.Id] = null;
         _generations[(int)handle.Id]++;
         _freeSlots.Enqueue(handle.Id);
+    }
+
+    public int GetUniformLocation(uint program, string name)
+    {
+        var key = (program, name);
+        if (_uniformLocationCache.TryGetValue(key, out int loc))
+            return loc;
+
+        loc = _gl.GetUniformLocation(program, name);
+        _uniformLocationCache[key] = loc;
+        return loc;
     }
 
     public bool IsValid(PipelineHandle handle) =>
@@ -137,5 +160,6 @@ internal sealed class OpenGlPipelinePool : IDisposable
             }
         }
         _freeSlots.Clear();
+        _uniformLocationCache.Clear();
     }
 }

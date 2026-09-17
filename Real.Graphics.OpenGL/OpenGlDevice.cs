@@ -28,6 +28,7 @@ public sealed class OpenGlDevice : IGraphicsDevice
     private readonly OpenGlFramebufferCache _framebufferCache;
 
     private OpenGlSwapchain? _currentSwapchain;
+    private OpenGlRenderGraph? _renderGraph;
     private DebugProc? _debugCallback;
 
     public unsafe OpenGlDevice(IWindow window, bool enableValidation = false)
@@ -164,15 +165,26 @@ public sealed class OpenGlDevice : IGraphicsDevice
         return _currentSwapchain;
     }
 
-    public IRenderGraph CreateRenderGraph() =>
-        new OpenGlRenderGraph(
-            _gl,
-            _texturePool,
-            _pipelinePool,
-            _bufferPool,
-            _samplerPool,
-            _framebufferCache,
-            () => _currentSwapchain);
+    public IRenderGraph CreateRenderGraph()
+    {
+        if (_renderGraph == null)
+        {
+            _renderGraph = new OpenGlRenderGraph(
+                _gl,
+                _texturePool,
+                _pipelinePool,
+                _bufferPool,
+                _samplerPool,
+                _framebufferCache,
+                () => _currentSwapchain);
+        }
+        else
+        {
+            _renderGraph.Reset();
+        }
+
+        return _renderGraph;
+    }
 
     public void WaitIdle()
     {
@@ -181,6 +193,7 @@ public sealed class OpenGlDevice : IGraphicsDevice
 
     public void Dispose()
     {
+        _renderGraph?.Dispose();
         _currentSwapchain?.Dispose();
         _framebufferCache.Dispose();
         _pipelinePool.Dispose();

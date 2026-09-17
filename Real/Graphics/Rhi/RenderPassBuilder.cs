@@ -9,7 +9,7 @@ namespace Real.Graphics.Rhi;
 /// </summary>
 public sealed class RenderPassBuilder
 {
-    public string Name { get; }
+    public string Name { get; private set; }
 
     public readonly List<TextureHandle> ReadTextures = new();
     public readonly List<TextureHandle> ColorWrites = new();
@@ -17,6 +17,15 @@ public sealed class RenderPassBuilder
     public Action<ICommandList>? Execution;
 
     public RenderPassBuilder(string name) => Name = name;
+
+    public void Reset(string name)
+    {
+        Name = name;
+        ReadTextures.Clear();
+        ColorWrites.Clear();
+        DepthWrite = null;
+        Execution = null;
+    }
 
     public RenderPassBuilder Reads(TextureHandle texture)
     {

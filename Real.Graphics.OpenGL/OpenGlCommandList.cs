@@ -16,7 +16,6 @@ internal sealed class OpenGlCommandList : ICommandList
     private readonly OpenGlBufferPool _buffers;
     private readonly OpenGlTexturePool _textures;
     private readonly OpenGlSamplerPool _samplers;
-    private readonly Dictionary<(uint Program, string Name), int> _uniformLocationCache = new();
 
     private OpenGlPipelineEntry _currentPipeline;
     private bool _hasPipeline;
@@ -34,6 +33,13 @@ internal sealed class OpenGlCommandList : ICommandList
         _buffers = buffers;
         _textures = textures;
         _samplers = samplers;
+    }
+
+    public void Reset()
+    {
+        _currentPipeline = default;
+        _hasPipeline = false;
+        _indexBufferOffset = 0;
     }
 
     public void BindPipeline(PipelineHandle pipeline)
@@ -58,10 +64,12 @@ internal sealed class OpenGlCommandList : ICommandList
 
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, entry.Handle);
 
-        if (_currentPipeline.Descriptor.VertexLayout.Attributes != null)
+        var attrs = _currentPipeline.Descriptor.VertexLayout.Attributes;
+        if (attrs != null)
         {
-            foreach (var attr in _currentPipeline.Descriptor.VertexLayout.Attributes)
+            for (int i = 0; i < attrs.Length; i++)
             {
+                ref readonly var attr = ref attrs[i];
                 _gl.EnableVertexAttribArray(attr.Location);
                 var (size, type, normalized) = GlFormatMap.ToVertexAttrib(attr.Format);
                 _gl.VertexAttribPointer(
@@ -122,13 +130,7 @@ internal sealed class OpenGlCommandList : ICommandList
     private int GetUniformLocation(string name)
     {
         if (!_hasPipeline) return -1;
-        uint program = _currentPipeline.Program;
-        if (_uniformLocationCache.TryGetValue((program, name), out int loc))
-            return loc;
-
-        loc = _gl.GetUniformLocation(program, name);
-        _uniformLocationCache[(program, name)] = loc;
-        return loc;
+        return _pipelines.GetUniformLocation(_currentPipeline.Program, name);
     }
 
     public void SetUniform(string name, int value)

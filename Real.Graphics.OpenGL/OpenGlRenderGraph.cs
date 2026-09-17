@@ -17,8 +17,10 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
     private readonly OpenGlSamplerPool _samplers;
     private readonly OpenGlFramebufferCache _framebufferCache;
     private readonly Func<OpenGlSwapchain?> _swapchainProvider;
+    private readonly OpenGlCommandList _cmd;
 
     private readonly List<RenderPassBuilder> _passes = new();
+    private readonly List<RenderPassBuilder> _passPool = new();
 
     public OpenGlRenderGraph(
         GL gl,
@@ -36,11 +38,29 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
         _samplers = samplers;
         _framebufferCache = framebufferCache;
         _swapchainProvider = swapchainProvider;
+        _cmd = new OpenGlCommandList(gl, pipelines, buffers, textures, samplers);
+    }
+
+    public void Reset()
+    {
+        _passPool.AddRange(_passes);
+        _passes.Clear();
     }
 
     public RenderPassBuilder AddPass(string name)
     {
-        var pass = new RenderPassBuilder(name);
+        RenderPassBuilder pass;
+        if (_passPool.Count > 0)
+        {
+            pass = _passPool[^1];
+            _passPool.RemoveAt(_passPool.Count - 1);
+            pass.Reset(name);
+        }
+        else
+        {
+            pass = new RenderPassBuilder(name);
+        }
+
         _passes.Add(pass);
         return pass;
     }
@@ -50,7 +70,7 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
         if (_passes.Count == 0) return;
 
         var swapchain = _swapchainProvider();
-        var cmd = new OpenGlCommandList(_gl, _pipelines, _buffers, _textures, _samplers);
+        _cmd.Reset();
 
         foreach (var pass in _passes)
         {
@@ -108,7 +128,7 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
                 _gl.Clear(clearMask);
             }
 
-            pass.Execution?.Invoke(cmd);
+            pass.Execution?.Invoke(_cmd);
 
             // If an offscreen pass was used targeting the backbuffer, blit to default framebuffer (0)
             if (!writesToSwapchain && swapchain != null && pass.ColorWrites.Contains(swapchain.BackbufferHandle))
@@ -127,11 +147,13 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
             }
         }
 
+        _passPool.AddRange(_passes);
         _passes.Clear();
     }
 
     public void Dispose()
     {
+        _passPool.AddRange(_passes);
         _passes.Clear();
     }
 }

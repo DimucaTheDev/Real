@@ -10,9 +10,37 @@ namespace Real.Graphics.OpenGL.RenderGraph;
 
 internal sealed class OpenGlFramebufferCache : IDisposable
 {
+    private readonly struct FboKey : IEquatable<FboKey>
+    {
+        public readonly uint C0;
+        public readonly uint C1;
+        public readonly uint C2;
+        public readonly uint C3;
+        public readonly int ColorCount;
+        public readonly uint Depth;
+
+        public FboKey(IReadOnlyList<TextureHandle> colors, TextureHandle? depth)
+        {
+            ColorCount = colors.Count;
+            C0 = colors.Count > 0 ? colors[0].Id : 0;
+            C1 = colors.Count > 1 ? colors[1].Id : 0;
+            C2 = colors.Count > 2 ? colors[2].Id : 0;
+            C3 = colors.Count > 3 ? colors[3].Id : 0;
+            Depth = depth?.Id ?? 0;
+        }
+
+        public bool Equals(FboKey other) =>
+            C0 == other.C0 && C1 == other.C1 && C2 == other.C2 && C3 == other.C3 &&
+            ColorCount == other.ColorCount && Depth == other.Depth;
+
+        public override bool Equals(object? obj) => obj is FboKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(C0, C1, C2, C3, ColorCount, Depth);
+    }
+
     private readonly GL _gl;
     private readonly OpenGlTexturePool _textures;
-    private readonly Dictionary<string, uint> _cache = new();
+    private readonly Dictionary<FboKey, uint> _cache = new();
 
     public OpenGlFramebufferCache(GL gl, OpenGlTexturePool textures)
     {
@@ -22,8 +50,7 @@ internal sealed class OpenGlFramebufferCache : IDisposable
 
     public unsafe uint GetOrCreate(IReadOnlyList<TextureHandle> colorWrites, TextureHandle? depthWrite)
     {
-        // Build a unique key from attachment IDs
-        string key = string.Join(",", colorWrites.Select(c => c.Id)) + "|" + (depthWrite?.Id ?? 0);
+        var key = new FboKey(colorWrites, depthWrite);
         if (_cache.TryGetValue(key, out uint cachedFbo))
         {
             return cachedFbo;
