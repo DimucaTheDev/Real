@@ -34,8 +34,10 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
     private readonly Func<CommandBuffer> _fallbackCommandBufferProvider;
     private readonly VulkanResourceTracker _tracker;
     private readonly VulkanBarrierBuilder _barrierBuilder;
+    private readonly VulkanCommandList _cmdList;
 
     private readonly List<RenderPassBuilder> _passes = new();
+    private readonly List<RenderPassBuilder> _passPool = new();
 
     public VulkanRenderGraph(
         Vk vk,
@@ -61,11 +63,29 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
         _fallbackCommandBufferProvider = fallbackCommandBufferProvider;
         _tracker = new VulkanResourceTracker();
         _barrierBuilder = new VulkanBarrierBuilder(vk, _tracker);
+        _cmdList = new VulkanCommandList(vk, device.Handle, pipelines, buffers, textures, samplers, descriptorAllocator);
+    }
+
+    public void Reset()
+    {
+        _passPool.AddRange(_passes);
+        _passes.Clear();
+        _tracker.Reset();
     }
 
     public RenderPassBuilder AddPass(string name)
     {
-        var builder = new RenderPassBuilder(name);
+        RenderPassBuilder builder;
+        if (_passPool.Count > 0)
+        {
+            builder = _passPool[^1];
+            _passPool.RemoveAt(_passPool.Count - 1);
+            builder.Reset(name);
+        }
+        else
+        {
+            builder = new RenderPassBuilder(name);
+        }
         _passes.Add(builder);
         return builder;
     }
@@ -121,16 +141,16 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
 
             InsertBarriersForPass(cmd, pass);
 
-            var colorFormats = ResolveColorFormats(pass);
-            var depthFormat = ResolveDepthFormat(pass);
-            var renderPass = _renderPassCache.GetOrCreate(colorFormats, depthFormat);
+            var renderPass = _renderPassCache.GetOrCreate(pass, _textures);
 
-            var attachments = new ImageView[pass.ColorWrites.Count + (pass.DepthWrite is not null ? 1 : 0)];
+            int attachmentCount = pass.ColorWrites.Count + (pass.DepthWrite is not null ? 1 : 0);
+            Span<ImageView> attachments = stackalloc ImageView[8];
+            var currentAttachments = attachments.Slice(0, attachmentCount);
             uint width = 0, height = 0;
             for (int i = 0; i < pass.ColorWrites.Count; i++)
             {
                 var tex = _textures.Get(pass.ColorWrites[i]);
-                attachments[i] = tex.View;
+                currentAttachments[i] = tex.View;
                 if (width == 0)
                 {
                     width = tex.Descriptor.Width;
@@ -141,7 +161,7 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
             if (pass.DepthWrite is { } depth)
             {
                 var tex = _textures.Get(depth);
-                attachments[^1] = tex.View;
+                currentAttachments[attachmentCount - 1] = tex.View;
                 if (width == 0)
                 {
                     width = tex.Descriptor.Width;
@@ -149,18 +169,19 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
                 }
             }
 
-            var framebuffer = _renderPassCache.GetOrCreateFramebuffer(renderPass, attachments, width, height);
+            var framebuffer = _renderPassCache.GetOrCreateFramebuffer(renderPass, currentAttachments, width, height);
 
-            var clearValues = new ClearValue[attachments.Length];
-            for (int i = 0; i < attachments.Length; i++)
+            Span<ClearValue> clearValues = stackalloc ClearValue[8];
+            var currentClearValues = clearValues.Slice(0, attachmentCount);
+            for (int i = 0; i < attachmentCount; i++)
             {
-                clearValues[i] = new ClearValue
+                currentClearValues[i] = new ClearValue
                 {
                     Color = new ClearColorValue(0, 0, 0, 1f)
                 };
             }
 
-            fixed (ClearValue* pClearValues = clearValues)
+            fixed (ClearValue* pClearValues = currentClearValues)
             {
                 var renderPassBeginInfo = new RenderPassBeginInfo
                 {
@@ -168,23 +189,14 @@ internal sealed class VulkanRenderGraph : IRenderGraph, IDisposable
                     RenderPass = renderPass,
                     Framebuffer = framebuffer,
                     RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(width, height)),
-                    ClearValueCount = (uint)attachments.Length,
+                    ClearValueCount = (uint)attachmentCount,
                     PClearValues = pClearValues
                 };
 
                 _vk.CmdBeginRenderPass(cmd, in renderPassBeginInfo, SubpassContents.Inline);
 
-                var commandList = new VulkanCommandList(
-                    _vk,
-                    _device.Handle,
-                    cmd,
-                    _pipelines,
-                    _buffers,
-                    _textures,
-                    _samplers,
-                    _descriptorAllocator);
-
-                pass.Execution?.Invoke(commandList);
+                _cmdList.Initialize(cmd);
+                pass.Execution?.Invoke(_cmdList);
 
                 _vk.CmdEndRenderPass(cmd);
             }

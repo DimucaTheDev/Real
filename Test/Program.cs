@@ -297,6 +297,7 @@ unsafe class Program
 
         var stopwatch = Stopwatch.StartNew();
 
+        var faces = new FaceInfo[6];
         while (!window.IsClosing)
         {
             window.PollEvents();
@@ -353,8 +354,6 @@ unsafe class Program
              * Для painter's algorithm нам нужна глубина
              * центров граней относительно камеры.
              */
-            var faces = new FaceInfo[6];
-
             for (int i = 0; i < 6; i++)
             {
                 var worldCenter =

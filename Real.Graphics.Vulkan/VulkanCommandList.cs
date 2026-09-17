@@ -18,12 +18,13 @@ internal sealed class VulkanCommandList : ICommandList
 {
     private readonly Vk _vk;
     private readonly Device _device;
-    private readonly CommandBuffer _cmd;
+    private CommandBuffer _cmd;
     private readonly VulkanPipelinePool _pipelines;
     private readonly VulkanBufferPool _buffers;
     private readonly VulkanTexturePool _textures;
     private readonly VulkanSamplerPool _samplers;
     private readonly VulkanDescriptorAllocator _descriptorAllocator;
+
     private readonly Dictionary<string, uint> _uniformOffsets = new(StringComparer.OrdinalIgnoreCase);
     private uint _nextPushConstantOffset = 0;
 
@@ -41,7 +42,6 @@ internal sealed class VulkanCommandList : ICommandList
     public VulkanCommandList(
         Vk vk,
         Device device,
-        CommandBuffer cmd,
         VulkanPipelinePool pipelines,
         VulkanBufferPool buffers,
         VulkanTexturePool textures,
@@ -50,12 +50,22 @@ internal sealed class VulkanCommandList : ICommandList
     {
         _vk = vk;
         _device = device;
-        _cmd = cmd;
         _pipelines = pipelines;
         _buffers = buffers;
         _textures = textures;
         _samplers = samplers;
         _descriptorAllocator = descriptorAllocator;
+    }
+
+    public void Initialize(CommandBuffer cmd)
+    {
+        _cmd = cmd;
+        _uniformOffsets.Clear();
+        _nextPushConstantOffset = 0;
+        _currentPipelineLayout = default;
+        _currentPipeline = default;
+        _currentDescriptorSet = default;
+        _descriptorSetBound = false;
     }
 
     public void BindPipeline(PipelineHandle pipeline)

@@ -40,6 +40,7 @@ public sealed class VulkanDevice : IGraphicsDevice
     private readonly VulkanPipelinePool _pipelinePool;
 
     private VulkanSwapchain? _currentSwapchain;
+    private VulkanRenderGraph? _renderGraph;
     private CommandPool _fallbackCommandPool;
     private CommandBuffer _fallbackCommandBuffer;
 
@@ -153,18 +154,28 @@ public sealed class VulkanDevice : IGraphicsDevice
         return swapchain;
     }
 
-    public IRenderGraph CreateRenderGraph() =>
-        new VulkanRenderGraph(
-            _instance.Vk,
-            _logicalDevice,
-            _texturePool,
-            _pipelinePool,
-            _bufferPool,
-            _samplerPool,
-            _descriptorAllocator,
-            _renderPassCache,
-            () => _currentSwapchain,
-            GetFallbackCommandBuffer);
+    public IRenderGraph CreateRenderGraph()
+    {
+        if (_renderGraph == null)
+        {
+            _renderGraph = new VulkanRenderGraph(
+                _instance.Vk,
+                _logicalDevice,
+                _texturePool,
+                _pipelinePool,
+                _bufferPool,
+                _samplerPool,
+                _descriptorAllocator,
+                _renderPassCache,
+                () => _currentSwapchain,
+                GetFallbackCommandBuffer);
+        }
+        else
+        {
+            _renderGraph.Reset();
+        }
+        return _renderGraph;
+    }
 
     private unsafe CommandBuffer GetFallbackCommandBuffer()
     {

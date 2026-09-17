@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Real.Graphics.Rhi;
 using Real.Graphics.Rhi.Enums;
+using Real.Graphics.Vulkan.Resources;
 using Real.Graphics.Vulkan.Translation;
 using Silk.NET.Vulkan;
 
@@ -17,28 +19,46 @@ internal sealed class VulkanRenderPassCache : IDisposable
     private readonly Vk _vk;
     private readonly Device _device;
 
-    /// <summary>
-    /// TextureFormat[] doesn't get content equality "for free" from a record
-    /// struct - arrays compare by reference. IEquatable is implemented
-    /// explicitly below so two Keys with the same formats in the same order
-    /// are treated as equal, otherwise every call would miss the cache.
-    /// </summary>
-    private readonly record struct Key(TextureFormat[] ColorFormats, TextureFormat? DepthFormat) : IEquatable<Key>
+    internal readonly struct PassKey : IEquatable<PassKey>
     {
-        public bool Equals(Key other) =>
-            ColorFormats.AsSpan().SequenceEqual(other.ColorFormats) && DepthFormat == other.DepthFormat;
+        public readonly TextureFormat C0;
+        public readonly TextureFormat C1;
+        public readonly TextureFormat C2;
+        public readonly TextureFormat C3;
+        public readonly int ColorCount;
+        public readonly TextureFormat Depth;
 
-        public override int GetHashCode()
+        public PassKey(RenderPassBuilder pass, VulkanTexturePool textures)
         {
-            var hash = new HashCode();
-            foreach (var format in ColorFormats)
-                hash.Add(format);
-            hash.Add(DepthFormat);
-            return hash.ToHashCode();
+            ColorCount = pass.ColorWrites.Count;
+            C0 = ColorCount > 0 ? textures.Get(pass.ColorWrites[0]).Descriptor.Format : (TextureFormat)0;
+            C1 = ColorCount > 1 ? textures.Get(pass.ColorWrites[1]).Descriptor.Format : (TextureFormat)0;
+            C2 = ColorCount > 2 ? textures.Get(pass.ColorWrites[2]).Descriptor.Format : (TextureFormat)0;
+            C3 = ColorCount > 3 ? textures.Get(pass.ColorWrites[3]).Descriptor.Format : (TextureFormat)0;
+            Depth = pass.DepthWrite is { } depth ? textures.Get(depth).Descriptor.Format : (TextureFormat)0;
         }
+
+        public PassKey(TextureFormat[] colors, TextureFormat? depth)
+        {
+            ColorCount = colors.Length;
+            C0 = ColorCount > 0 ? colors[0] : (TextureFormat)0;
+            C1 = ColorCount > 1 ? colors[1] : (TextureFormat)0;
+            C2 = ColorCount > 2 ? colors[2] : (TextureFormat)0;
+            C3 = ColorCount > 3 ? colors[3] : (TextureFormat)0;
+            Depth = depth ?? (TextureFormat)0;
+        }
+
+        public bool Equals(PassKey other) =>
+            ColorCount == other.ColorCount &&
+            C0 == other.C0 && C1 == other.C1 && C2 == other.C2 && C3 == other.C3 &&
+            Depth == other.Depth;
+
+        public override bool Equals(object? obj) => obj is PassKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(ColorCount, C0, C1, C2, C3, Depth);
     }
 
-    private readonly Dictionary<Key, RenderPass> _renderPasses = new();
+    private readonly Dictionary<PassKey, RenderPass> _renderPasses = new();
     private readonly Dictionary<(RenderPass, ulong FramebufferKey), Framebuffer> _framebuffers = new();
 
     public VulkanRenderPassCache(Vk vk, Device device)
@@ -51,19 +71,114 @@ internal sealed class VulkanRenderPassCache : IDisposable
 
     public unsafe RenderPass GetOrCreate(TextureFormat[] colorFormats, TextureFormat? depthFormat)
     {
-        var key = new Key(colorFormats, depthFormat);
+        var key = new PassKey(colorFormats, depthFormat);
         if (_renderPasses.TryGetValue(key, out var existing))
             return existing;
 
-        var attachmentCount = colorFormats.Length + (depthFormat is not null ? 1 : 0);
+        var colorCount = colorFormats.Length;
+        bool hasDepth = depthFormat is not null;
+        var attachmentCount = colorCount + (hasDepth ? 1 : 0);
+        
         var attachments = new AttachmentDescription[attachmentCount];
-        var colorRefs = new AttachmentReference[colorFormats.Length];
+        var colorRefs = new AttachmentReference[colorCount];
 
-        for (int i = 0; i < colorFormats.Length; i++)
+        for (int i = 0; i < colorCount; i++)
         {
+            var format = colorFormats[i];
             attachments[i] = new AttachmentDescription
             {
-                Format = VkFormatMap.ToVkFormat(colorFormats[i]),
+                Format = VkFormatMap.ToVkFormat(format),
+                Samples = SampleCountFlags.Count1Bit,
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.Store,
+                StencilLoadOp = AttachmentLoadOp.DontCare,
+                StencilStoreOp = AttachmentStoreOp.DontCare,
+                InitialLayout = ImageLayout.ColorAttachmentOptimal,
+                FinalLayout = ImageLayout.ColorAttachmentOptimal
+            };
+
+            colorRefs[i] = new AttachmentReference
+            {
+                Attachment = (uint)i,
+                Layout = ImageLayout.ColorAttachmentOptimal
+            };
+        }
+
+        AttachmentReference depthRef = default;
+        if (hasDepth)
+        {
+            int depthIndex = colorCount;
+            var format = depthFormat!.Value;
+            attachments[depthIndex] = new AttachmentDescription
+            {
+                Format = VkFormatMap.ToVkFormat(format),
+                Samples = SampleCountFlags.Count1Bit,
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.DontCare,
+                StencilLoadOp = AttachmentLoadOp.DontCare,
+                StencilStoreOp = AttachmentStoreOp.DontCare,
+                InitialLayout = ImageLayout.DepthStencilAttachmentOptimal,
+                FinalLayout = ImageLayout.DepthStencilAttachmentOptimal
+            };
+
+            depthRef = new AttachmentReference
+            {
+                Attachment = (uint)depthIndex,
+                Layout = ImageLayout.DepthStencilAttachmentOptimal
+            };
+        }
+
+        fixed (AttachmentReference* pColorRefs = colorRefs)
+        {
+            var subpass = new SubpassDescription
+            {
+                PipelineBindPoint = PipelineBindPoint.Graphics,
+                ColorAttachmentCount = (uint)colorRefs.Length,
+                PColorAttachments = pColorRefs,
+                PDepthStencilAttachment = hasDepth ? &depthRef : null
+            };
+
+            fixed (AttachmentDescription* pAttachments = attachments)
+            {
+                var renderPassInfo = new RenderPassCreateInfo
+                {
+                    SType = StructureType.RenderPassCreateInfo,
+                    AttachmentCount = (uint)attachments.Length,
+                    PAttachments = pAttachments,
+                    SubpassCount = 1,
+                    PSubpasses = &subpass,
+                    DependencyCount = 0
+                };
+
+                var result = _vk.CreateRenderPass(_device, in renderPassInfo, null, out var renderPass);
+                if (result != Result.Success)
+                    throw new InvalidOperationException($"vkCreateRenderPass failed: {result}");
+
+                _renderPasses[key] = renderPass;
+                return renderPass;
+            }
+        }
+    }
+
+    public unsafe RenderPass GetOrCreate(RenderPassBuilder pass, VulkanTexturePool textures)
+    {
+        var key = new PassKey(pass, textures);
+        if (_renderPasses.TryGetValue(key, out var existing))
+            return existing;
+
+        var colorCount = pass.ColorWrites.Count;
+        bool hasDepth = pass.DepthWrite is not null;
+        var attachmentCount = colorCount + (hasDepth ? 1 : 0);
+        
+        var attachments = new AttachmentDescription[attachmentCount];
+        var colorRefs = new AttachmentReference[colorCount];
+
+        for (int i = 0; i < colorCount; i++)
+        {
+            var format = textures.Get(pass.ColorWrites[i]).Descriptor.Format;
+            attachments[i] = new AttachmentDescription
+            {
+                Format = VkFormatMap.ToVkFormat(format),
                 Samples = SampleCountFlags.Count1Bit,
                 LoadOp = AttachmentLoadOp.Clear,
                 StoreOp = AttachmentStoreOp.Store,
@@ -83,13 +198,13 @@ internal sealed class VulkanRenderPassCache : IDisposable
         }
 
         AttachmentReference depthRef = default;
-        bool hasDepth = depthFormat is not null;
         if (hasDepth)
         {
-            int depthIndex = colorFormats.Length;
+            int depthIndex = colorCount;
+            var format = textures.Get(pass.DepthWrite!.Value).Descriptor.Format;
             attachments[depthIndex] = new AttachmentDescription
             {
-                Format = VkFormatMap.ToVkFormat(depthFormat!.Value),
+                Format = VkFormatMap.ToVkFormat(format),
                 Samples = SampleCountFlags.Count1Bit,
                 LoadOp = AttachmentLoadOp.Clear,
                 StoreOp = AttachmentStoreOp.DontCare,
@@ -140,7 +255,7 @@ internal sealed class VulkanRenderPassCache : IDisposable
         }
     }
 
-    public unsafe Framebuffer GetOrCreateFramebuffer(RenderPass renderPass, ImageView[] attachments, uint width, uint height)
+    public unsafe Framebuffer GetOrCreateFramebuffer(RenderPass renderPass, ReadOnlySpan<ImageView> attachments, uint width, uint height)
     {
         ulong framebufferKey = ComputeAttachmentsKey(attachments, width, height);
         var cacheKey = (renderPass, framebufferKey);
@@ -176,7 +291,7 @@ internal sealed class VulkanRenderPassCache : IDisposable
     /// technically redundant with the handles, but folding it in keeps the key
     /// correct even if this is ever called with reused/aliased views.
     /// </summary>
-    private static ulong ComputeAttachmentsKey(ImageView[] attachments, uint width, uint height)
+    private static ulong ComputeAttachmentsKey(ReadOnlySpan<ImageView> attachments, uint width, uint height)
     {
         unchecked
         {
