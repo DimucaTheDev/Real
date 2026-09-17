@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Real;
@@ -16,1088 +17,482 @@ unsafe class Program
 {
     private static IWindow window = null!;
 
+    /*
+     * ВАЖНО:
+     *
+     * Мы используем RGBA32Float для обеих атрибутов,
+     * поэтому Position = 16 байт и Color = 16 байт.
+     *
+     * Это специально сделано так, чтобы VertexLayout
+     * точно соответствовал реальному содержимому буфера.
+     */
     private struct Vertex
     {
-        public float X, Y, Z;
-        public float R, G, B;
+        public float X, Y, Z, W;
+        public float R, G, B, A;
+
+        public Vertex(
+            float x, float y, float z,
+            float r, float g, float b)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+            W = 1.0f;
+
+            R = r;
+            G = g;
+            B = b;
+            A = 1.0f;
+        }
+    }
+
+    private struct FaceInfo
+    {
+        public int Index;
+        public Vector3 Center;
+        public float Depth;
     }
 
     static void Main(string[] args)
     {
-        try
-        {
-            Console.WriteLine("FMOD: " + SoundTest.Test());
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("FMOD: (disabled - " + ex.Message + ")");
-        }
+        var api = Enum.Parse<GraphicsApi>(
+            args.FirstOrDefault("vulkan")!,
+            true);
 
-        var api = Enum.Parse<GraphicsApi>(args.FirstOrDefault("vulkan")!, true);
         window = new GlfwWindow(api);
+
         IGraphicsBackendFactory factory = api switch
         {
             GraphicsApi.OpenGl => new OpenGlBackendFactory(),
             GraphicsApi.Vulkan => new VulkanBackendFactory(),
-            _ => throw new()
+            _ => throw new NotSupportedException()
         };
-        using var device = factory.CreateDevice(window, Debugger.IsAttached);
+
+        using var device = factory.CreateDevice(
+            window,
+            Debugger.IsAttached);
+
         using var swapchain = device.CreateSwapchain(window);
 
-        // 3D Cube: 6 faces, 2 triangles per face, 36 vertices total
-        ReadOnlySpan<Vertex> cube =
+        /*
+         * Каждая грань находится в отдельном буфере.
+         *
+         * Это позволяет нам при отсутствии depth-buffer
+         * рисовать грани в правильном порядке:
+         * far -> near.
+         */
+
+        var front =
+            new Vertex[]
+            {
+                new(-0.5f, -0.5f,  0.5f, 0.95f, 0.22f, 0.22f),
+                new( 0.5f, -0.5f,  0.5f, 0.95f, 0.22f, 0.22f),
+                new( 0.5f,  0.5f,  0.5f, 0.95f, 0.22f, 0.22f),
+
+                new(-0.5f, -0.5f,  0.5f, 0.95f, 0.22f, 0.22f),
+                new( 0.5f,  0.5f,  0.5f, 0.95f, 0.22f, 0.22f),
+                new(-0.5f,  0.5f,  0.5f, 0.95f, 0.22f, 0.22f),
+            };
+
+        var back =
+            new Vertex[]
+            {
+                new( 0.5f, -0.5f, -0.5f, 0.05f, 0.85f, 0.85f),
+                new(-0.5f, -0.5f, -0.5f, 0.05f, 0.85f, 0.85f),
+                new(-0.5f,  0.5f, -0.5f, 0.05f, 0.85f, 0.85f),
+
+                new( 0.5f, -0.5f, -0.5f, 0.05f, 0.85f, 0.85f),
+                new(-0.5f,  0.5f, -0.5f, 0.05f, 0.85f, 0.85f),
+                new( 0.5f,  0.5f, -0.5f, 0.05f, 0.85f, 0.85f),
+            };
+
+        var top =
+            new Vertex[]
+            {
+                new(-0.5f,  0.5f,  0.5f, 0.15f, 0.85f, 0.35f),
+                new( 0.5f,  0.5f,  0.5f, 0.15f, 0.85f, 0.35f),
+                new( 0.5f,  0.5f, -0.5f, 0.15f, 0.85f, 0.35f),
+
+                new(-0.5f,  0.5f,  0.5f, 0.15f, 0.85f, 0.35f),
+                new( 0.5f,  0.5f, -0.5f, 0.15f, 0.85f, 0.35f),
+                new(-0.5f,  0.5f, -0.5f, 0.15f, 0.85f, 0.35f),
+            };
+
+        var bottom =
+            new Vertex[]
+            {
+                new(-0.5f, -0.5f, -0.5f, 0.20f, 0.40f, 0.95f),
+                new( 0.5f, -0.5f, -0.5f, 0.20f, 0.40f, 0.95f),
+                new( 0.5f, -0.5f,  0.5f, 0.20f, 0.40f, 0.95f),
+
+                new(-0.5f, -0.5f, -0.5f, 0.20f, 0.40f, 0.95f),
+                new( 0.5f, -0.5f,  0.5f, 0.20f, 0.40f, 0.95f),
+                new(-0.5f, -0.5f,  0.5f, 0.20f, 0.40f, 0.95f),
+            };
+
+        var right =
+            new Vertex[]
+            {
+                new(0.5f, -0.5f,  0.5f, 0.95f, 0.70f, 0.10f),
+                new(0.5f, -0.5f, -0.5f, 0.95f, 0.70f, 0.10f),
+                new(0.5f,  0.5f, -0.5f, 0.95f, 0.70f, 0.10f),
+
+                new(0.5f, -0.5f,  0.5f, 0.95f, 0.70f, 0.10f),
+                new(0.5f,  0.5f, -0.5f, 0.95f, 0.70f, 0.10f),
+                new(0.5f,  0.5f,  0.5f, 0.95f, 0.70f, 0.10f),
+            };
+
+        var left =
+            new Vertex[]
+            {
+                new(-0.5f, -0.5f, -0.5f, 0.75f, 0.20f, 0.85f),
+                new(-0.5f, -0.5f,  0.5f, 0.75f, 0.20f, 0.85f),
+                new(-0.5f,  0.5f,  0.5f, 0.75f, 0.20f, 0.85f),
+
+                new(-0.5f, -0.5f, -0.5f, 0.75f, 0.20f, 0.85f),
+                new(-0.5f,  0.5f,  0.5f, 0.75f, 0.20f, 0.85f),
+                new(-0.5f,  0.5f, -0.5f, 0.75f, 0.20f, 0.85f),
+            };
+
+        /*
+         * Центры граней.
+         *
+         * Они нужны только для painter's algorithm:
+         * определяем, какая грань дальше от камеры.
+         */
+        Vector3[] faceCenters =
         [
-            // Front Face (Z = +0.5) - Red
-            new Vertex { X = -0.5f, Y = -0.5f, Z =  0.5f, R = 0.95f, G = 0.22f, B = 0.22f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z =  0.5f, R = 0.95f, G = 0.22f, B = 0.22f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z =  0.5f, R = 0.95f, G = 0.22f, B = 0.22f },
-            new Vertex { X = -0.5f, Y = -0.5f, Z =  0.5f, R = 0.95f, G = 0.22f, B = 0.22f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z =  0.5f, R = 0.95f, G = 0.22f, B = 0.22f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z =  0.5f, R = 0.95f, G = 0.22f, B = 0.22f },
-
-            // Back Face (Z = -0.5) - Cyan
-            new Vertex { X =  0.5f, Y = -0.5f, Z = -0.5f, R = 0.05f, G = 0.85f, B = 0.85f },
-            new Vertex { X = -0.5f, Y = -0.5f, Z = -0.5f, R = 0.05f, G = 0.85f, B = 0.85f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z = -0.5f, R = 0.05f, G = 0.85f, B = 0.85f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z = -0.5f, R = 0.05f, G = 0.85f, B = 0.85f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z = -0.5f, R = 0.05f, G = 0.85f, B = 0.85f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z = -0.5f, R = 0.05f, G = 0.85f, B = 0.85f },
-
-            // Top Face (Y = +0.5) - Green
-            new Vertex { X = -0.5f, Y =  0.5f, Z =  0.5f, R = 0.15f, G = 0.85f, B = 0.35f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z =  0.5f, R = 0.15f, G = 0.85f, B = 0.35f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z = -0.5f, R = 0.15f, G = 0.85f, B = 0.35f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z =  0.5f, R = 0.15f, G = 0.85f, B = 0.35f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z = -0.5f, R = 0.15f, G = 0.85f, B = 0.35f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z = -0.5f, R = 0.15f, G = 0.85f, B = 0.35f },
-
-            // Bottom Face (Y = -0.5) - Blue
-            new Vertex { X = -0.5f, Y = -0.5f, Z = -0.5f, R = 0.20f, G = 0.40f, B = 0.95f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z = -0.5f, R = 0.20f, G = 0.40f, B = 0.95f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z =  0.5f, R = 0.20f, G = 0.40f, B = 0.95f },
-            new Vertex { X = -0.5f, Y = -0.5f, Z = -0.5f, R = 0.20f, G = 0.40f, B = 0.95f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z =  0.5f, R = 0.20f, G = 0.40f, B = 0.95f },
-            new Vertex { X = -0.5f, Y = -0.5f, Z =  0.5f, R = 0.20f, G = 0.40f, B = 0.95f },
-
-            // Right Face (X = +0.5) - Amber / Yellow
-            new Vertex { X =  0.5f, Y = -0.5f, Z =  0.5f, R = 0.95f, G = 0.70f, B = 0.10f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z = -0.5f, R = 0.95f, G = 0.70f, B = 0.10f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z = -0.5f, R = 0.95f, G = 0.70f, B = 0.10f },
-            new Vertex { X =  0.5f, Y = -0.5f, Z =  0.5f, R = 0.95f, G = 0.70f, B = 0.10f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z = -0.5f, R = 0.95f, G = 0.70f, B = 0.10f },
-            new Vertex { X =  0.5f, Y =  0.5f, Z =  0.5f, R = 0.95f, G = 0.70f, B = 0.10f },
-
-            // Left Face (X = -0.5) - Purple / Magenta
-            new Vertex { X = -0.5f, Y = -0.5f, Z = -0.5f, R = 0.75f, G = 0.20f, B = 0.85f },
-            new Vertex { X = -0.5f, Y = -0.5f, Z =  0.5f, R = 0.75f, G = 0.20f, B = 0.85f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z =  0.5f, R = 0.75f, G = 0.20f, B = 0.85f },
-            new Vertex { X = -0.5f, Y = -0.5f, Z = -0.5f, R = 0.75f, G = 0.20f, B = 0.85f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z =  0.5f, R = 0.75f, G = 0.20f, B = 0.85f },
-            new Vertex { X = -0.5f, Y =  0.5f, Z = -0.5f, R = 0.75f, G = 0.20f, B = 0.85f },
+            new( 0.0f,  0.0f,  0.5f), // Front
+            new( 0.0f,  0.0f, -0.5f), // Back
+            new( 0.0f,  0.5f,  0.0f), // Top
+            new( 0.0f, -0.5f,  0.0f), // Bottom
+            new( 0.5f,  0.0f,  0.0f), // Right
+            new(-0.5f,  0.0f,  0.0f), // Left
         ];
 
-        var vertexBuffer = device.CreateBuffer(
-            new BufferDescriptor(
-                Size: (ulong)(cube.Length * Marshal.SizeOf<Vertex>()),
-                Usage: BufferUsage.Vertex,
-                DebugName: "CubeVertexBuffer"), MemoryMarshal.AsBytes(cube));
-        var vertexShader = device.CreateShader(ShaderStage.Vertex, File.ReadAllBytes("shaders/main.vert"));
-        var fragmentShader = device.CreateShader(ShaderStage.Fragment, File.ReadAllBytes("shaders/main.frag"));
-        var pipeline = device.CreatePipeline(new PipelineDescriptor()
+        var faceBuffers = new
         {
-            VertexShader = vertexShader,
-            FragmentShader = fragmentShader,
-            Topology = PrimitiveTopology.TriangleList,
-            Blend = BlendState.Opaque,
-            ColorAttachmentFormats = [swapchain.Format],
-            DebugName = "cubePipeline",
-            DepthAttachmentFormat = null,
-            DepthStencil = DepthStencilState.Disabled,
-            Raster = new RasterState(CullMode.Back),
-            VertexLayout = new VertexLayout()
-            {
-                Stride = (uint)Marshal.SizeOf<Vertex>(),
-                Attributes =
-                [
-                    new VertexAttribute(Location: 0, Format: TextureFormat.Rgba8Unorm, Offset: 0),
-                    new VertexAttribute(Location: 1, Format: TextureFormat.Rgba8Unorm, Offset: 12),
-                ]
-            },
-        });
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            Front = device.CreateBuffer(
+                new BufferDescriptor(
+                    Size: (ulong)(front.Length * Marshal.SizeOf<Vertex>()),
+                    Usage: BufferUsage.Vertex,
+                    DebugName: "CubeFront"),
+                MemoryMarshal.AsBytes(front.AsSpan())),
+
+            Back = device.CreateBuffer(
+                new BufferDescriptor(
+                    Size: (ulong)(back.Length * Marshal.SizeOf<Vertex>()),
+                    Usage: BufferUsage.Vertex,
+                    DebugName: "CubeBack"),
+                MemoryMarshal.AsBytes(back.AsSpan())),
+
+            Top = device.CreateBuffer(
+                new BufferDescriptor(
+                    Size: (ulong)(top.Length * Marshal.SizeOf<Vertex>()),
+                    Usage: BufferUsage.Vertex,
+                    DebugName: "CubeTop"),
+                MemoryMarshal.AsBytes(top.AsSpan())),
+
+            Bottom = device.CreateBuffer(
+                new BufferDescriptor(
+                    Size: (ulong)(bottom.Length * Marshal.SizeOf<Vertex>()),
+                    Usage: BufferUsage.Vertex,
+                    DebugName: "CubeBottom"),
+                MemoryMarshal.AsBytes(bottom.AsSpan())),
+
+            Right = device.CreateBuffer(
+                new BufferDescriptor(
+                    Size: (ulong)(right.Length * Marshal.SizeOf<Vertex>()),
+                    Usage: BufferUsage.Vertex,
+                    DebugName: "CubeRight"),
+                MemoryMarshal.AsBytes(right.AsSpan())),
+
+            Left = device.CreateBuffer(
+                new BufferDescriptor(
+                    Size: (ulong)(left.Length * Marshal.SizeOf<Vertex>()),
+                    Usage: BufferUsage.Vertex,
+                    DebugName: "CubeLeft"),
+                MemoryMarshal.AsBytes(left.AsSpan())),
+        };
+
+        var vertexShader =
+            device.CreateShader(
+                ShaderStage.Vertex,
+                File.ReadAllBytes("shaders/main.vert"));
+
+        var fragmentShader =
+            device.CreateShader(
+                ShaderStage.Fragment,
+                File.ReadAllBytes("shaders/main.frag"));
+
+        /*
+         * Vertex:
+         *
+         * Position:
+         *   float4 = 16 bytes
+         *
+         * Color:
+         *   float4 = 16 bytes
+         *
+         * Итого:
+         *   32 bytes
+         */
+        var pipeline =
+            device.CreatePipeline(
+                new PipelineDescriptor()
+                {
+                    VertexShader = vertexShader,
+                    FragmentShader = fragmentShader,
+
+                    Topology = PrimitiveTopology.TriangleList,
+
+                    Blend = BlendState.Opaque,
+
+                    ColorAttachmentFormats =
+                    [
+                        swapchain.Format
+                    ],
+
+                    DebugName = "CubePipeline",
+
+                    /*
+                     * Пока намеренно без depth buffer.
+                     *
+                     * Порядок граней регулируется на CPU.
+                     */
+                    DepthAttachmentFormat = null,
+                    DepthStencil = DepthStencilState.Disabled,
+
+                    /*
+                     * Куб выпуклый, а все 6 граней имеют согласованный CCW-winding
+                     * (проверено векторным произведением для каждой грани), поэтому
+                     * обычный backface culling корректно скрывает невидимые грани
+                     * для выпуклого тела сам по себе, без depth-buffer'а.
+                     * painter's algorithm на CPU (сортировка по центру грани) даёт сбой
+                     * именно на ракурсах/рёбрах, когда несколько граней
+                     * перекрываются на экране одновременно — именно это давало
+                     * "ломанную плоскость" вместо куба.
+                     */
+                    Raster = new RasterState(CullMode.Back),
+
+                    VertexLayout = new VertexLayout()
+                    {
+                        Stride = (uint)Marshal.SizeOf<Vertex>(),
+
+                        Attributes =
+                        [
+                            new VertexAttribute(
+                                Location: 0,
+                                Format: TextureFormat.Rgba32Float,
+                                Offset: 0),
+
+                            new VertexAttribute(
+                                Location: 1,
+                                Format: TextureFormat.Rgba32Float,
+                                Offset: 16),
+                        ]
+                    }
+                });
+
+        var stopwatch = Stopwatch.StartNew();
 
         while (!window.IsClosing)
         {
             window.PollEvents();
-            if (window.Size.Width <= 0 || window.Size.Height <= 0)
+
+            if (window.Size.Width <= 0 ||
+                window.Size.Height <= 0)
             {
                 Thread.Sleep(16);
                 continue;
             }
 
-            var backbuffer = swapchain.AcquireNextImage();
+            var backbuffer =
+                swapchain.AcquireNextImage();
+
             if (!backbuffer.IsValid)
             {
                 Thread.Sleep(16);
                 continue;
             }
 
-            float time = (float)stopwatch.Elapsed.TotalSeconds;
-            float aspect = (float)window.Size.Width / Math.Max(1f, window.Size.Height);
+            float time =
+                (float)stopwatch.Elapsed.TotalSeconds;
 
-            // Compute dynamic 3D transformation matrices
-            var model = System.Numerics.Matrix4x4.CreateRotationX(time * 0.75f) *
-                        System.Numerics.Matrix4x4.CreateRotationY(time * 1.10f) *
-                        System.Numerics.Matrix4x4.CreateRotationZ(time * 0.35f);
+            float aspect =
+                (float)window.Size.Width /
+                Math.Max(1f, window.Size.Height);
 
-            var view = System.Numerics.Matrix4x4.CreateLookAt(
-                new System.Numerics.Vector3(0, 0, 2.5f),
-                System.Numerics.Vector3.Zero,
-                System.Numerics.Vector3.UnitY);
+            var model =
+                Matrix4x4.CreateRotationX(time * 0.75f) *
+                Matrix4x4.CreateRotationY(time * 1.10f) *
+                Matrix4x4.CreateRotationZ(time * 0.35f);
 
-            var proj = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView(
-                (float)(45.0 * Math.PI / 180.0),
-                aspect,
-                0.1f,
-                100.0f);
+            var view =
+                Matrix4x4.CreateLookAt(
+                    new Vector3(0, 0, 3.5f),
+                    Vector3.Zero,
+                    Vector3.UnitY);
 
-            var mvp = model * view * proj;
+            var projection =
+                Matrix4x4.CreatePerspectiveFieldOfView(
+                    MathF.PI / 4.0f,
+                    aspect,
+                    0.1f,
+                    100.0f);
 
-            var graph = device.CreateRenderGraph();
+            if (api == GraphicsApi.Vulkan)
+            {
+                projection.M22 = -projection.M22;
+            }
+
+            var mvp = model * view * projection;
+
+            /*
+             * Для painter's algorithm нам нужна глубина
+             * центров граней относительно камеры.
+             */
+            var faces = new FaceInfo[6];
+
+            for (int i = 0; i < 6; i++)
+            {
+                var worldCenter =
+                    Vector3.Transform(
+                        faceCenters[i],
+                        model);
+
+                var viewCenter =
+                    Vector3.Transform(
+                        worldCenter,
+                        view);
+
+                faces[i] = new FaceInfo
+                {
+                    Index = i,
+                    Center = worldCenter,
+                    Depth = viewCenter.Z
+                };
+            }
+
+            /*
+             * Сначала дальние грани,
+             * потом ближние.
+             *
+             * Для нашей камеры дальние имеют
+             * меньшее (более отрицательное) Z.
+             */
+            Array.Sort(
+                faces,
+                static (a, b) =>
+                    a.Depth.CompareTo(b.Depth));
+
+            var graph =
+                device.CreateRenderGraph();
+
             graph
-                .AddPass("TestPass")
+                .AddPass("CubePass")
                 .Writes(backbuffer)
                 .SetExecute(cmd =>
                 {
-                    cmd.SetViewport(0, 0, window.Size.Width, window.Size.Height);
-                    cmd.SetScissor(0, 0, (uint)window.Size.Width, (uint)window.Size.Height);
+                    cmd.SetViewport(
+                        0,
+                        0,
+                        window.Size.Width,
+                        window.Size.Height);
+
+                    cmd.SetScissor(
+                        0,
+                        0,
+                        (uint)window.Size.Width,
+                        (uint)window.Size.Height);
 
                     cmd.BindPipeline(pipeline);
-                    cmd.BindVertexBuffer(vertexBuffer);
 
-                    // Set uniforms of various types
-                    cmd.SetUniform("uMVP", in mvp, transpose: true);
-                    cmd.SetUniform("uTime", time);
-                    cmd.SetUniform("uAspect", aspect);
-                    cmd.SetUniform("uResolution", new System.Numerics.Vector2(window.Size.Width, window.Size.Height));
-                    cmd.SetUniform("uLighting", 1);
+                    /*
+                     * ВАЖНО: ЗДЕСЬ НЕ НУЖНО транспонировать матрицу вручную.
+                     *
+                     * System.Numerics.Matrix4x4 хранится row-major и используется
+                     * с row-vector конвенцией (v' = v * M), а GLSL/SPIR-V ожидает
+                     * column-major данные для column-vector конвенции (v' = M * v).
+                     *
+                     * Если просто отправить сырую память row-major(mvp) и сказать GPU
+                     * "это уже column-major, не транспонируй" (transpose: false), то GPU прочитает
+                     * эти же числа по столбцам вместо строк — а это математически и есть
+                     * транспонирование. То есть дополнительно вызывать
+                     * Matrix4x4.Transpose(mvp) перед этим НЕ НАДО — это давало двойной
+                     * эффект (транспонирование в коде + "транспонирование" при чтении
+                     * колонками), что в итоге отправляло на GPU зеркальный mvp вместо
+                     * его транспонированной формы — отсюда и был перекошенный/
+                     * "sheared" куб.
+                     */
+                    cmd.SetUniform(
+                        "uMVP",
+                        in mvp,
+                        transpose: false);
 
-                    cmd.Draw(vertexCount: 36);
+                    /*
+                     * Рисуем грани в отсортированном порядке.
+                     */
+                    for (int i = 0; i < 6; i++)
+                    {
+                        switch (faces[i].Index)
+                        {
+                            case 0:
+                                cmd.BindVertexBuffer(
+                                    faceBuffers.Front);
+                                break;
+
+                            case 1:
+                                cmd.BindVertexBuffer(
+                                    faceBuffers.Back);
+                                break;
+
+                            case 2:
+                                cmd.BindVertexBuffer(
+                                    faceBuffers.Top);
+                                break;
+
+                            case 3:
+                                cmd.BindVertexBuffer(
+                                    faceBuffers.Bottom);
+                                break;
+
+                            case 4:
+                                cmd.BindVertexBuffer(
+                                    faceBuffers.Right);
+                                break;
+
+                            case 5:
+                                cmd.BindVertexBuffer(
+                                    faceBuffers.Left);
+                                break;
+
+                            default:
+                                throw new UnreachableException();
+                        }
+
+                        cmd.Draw(vertexCount: 6);
+                    }
                 });
+
             graph.Execute();
+
             swapchain.Present();
         }
 
         device.WaitIdle();
+
         device.DestroyPipeline(pipeline);
+
         device.DestroyShader(vertexShader);
         device.DestroyShader(fragmentShader);
-        device.DestroyBuffer(vertexBuffer);
+
+        device.DestroyBuffer(faceBuffers.Front);
+        device.DestroyBuffer(faceBuffers.Back);
+        device.DestroyBuffer(faceBuffers.Top);
+        device.DestroyBuffer(faceBuffers.Bottom);
+        device.DestroyBuffer(faceBuffers.Right);
+        device.DestroyBuffer(faceBuffers.Left);
     }
-#if false
-    static unsafe void Main2()
-    {
-        vk = Vk.GetApi();
-
-        var appInfo = new ApplicationInfo()
-        {
-            PApplicationName = (byte*)SilkMarshal.StringToPtr("app name"),
-            ApplicationVersion = Vk.MakeVersion(1, 2, 3),
-            ApiVersion = Vk.Version13,
-        };
-
-        window = new GlfwWindow(GraphicsApi.Vulkan);
-        window.Show();
-
-        var instanceLayers = GetInstanceLayers();
-        if (Debugger.IsAttached && !instanceLayers.Contains("VK_LAYER_KHRONOS_validation"))
-            throw new();
-
-        var debug = new DebugUtilsMessengerCreateInfoEXT()
-        {
-            MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
-            MessageType = DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
-            PfnUserCallback = new PfnDebugUtilsMessengerCallbackEXT((_, _, data, _) =>
-            {
-                Console.WriteLine("Validation layer: " + SilkMarshal.PtrToString((nint)data->PMessage));
-                return Vk.False;
-            }),
-            SType = StructureType.DebugUtilsMessengerCreateInfoExt,
-            PUserData = null
-        };
-        List<string> initExs =
-        [
-            .. SilkMarshal.PtrToStringArray((nint)Glfw.GetApi().GetRequiredInstanceExtensions(out var glfwExCount),
-                (int)glfwExCount)
-        ];
-        if (Debugger.IsAttached)
-            initExs.Add("VK_EXT_debug_utils");
-        var instanceCreateInfo = new InstanceCreateInfo()
-        {
-            PApplicationInfo = &appInfo,
-            EnabledLayerCount = Debugger.IsAttached ? 1 : (uint)0,
-            SType = StructureType.InstanceCreateInfo,
-            PpEnabledLayerNames = Debugger.IsAttached
-                ? (byte**)SilkMarshal.StringArrayToPtr(["VK_LAYER_KHRONOS_validation"])
-                : null,
-            EnabledExtensionCount = (uint)initExs.Count,
-            PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(initExs),
-            PNext = &debug
-        };
-
-        if (vk.CreateInstance(in instanceCreateInfo, null, out var instance) != Result.Success)
-        {
-            throw new();
-        }
-
-        var surfaceKhr = CreateSurface(instance);
-
-        var devices = GetPhysicalDevices(instance);
-        if (!devices.Any())
-            throw new();
-
-        const string ex = KhrSwapchain.ExtensionName;
-        List<int> graphicFamilyIndices = [];
-        List<int> presentationFamilyIndices = [];
-        PhysicalDevice physDevice = default;
-
-        foreach (var dev in GetPhysicalDevices(instance))
-        {
-            var supports = GetDeviceExtensions(dev).Contains(ex);
-            List<int> physDeviceGraphicFamilyIndices = [];
-            List<int> physDevicePresentationFamilyIndices = [];
-            var props = GetDeviceQueueProps(dev);
-            for (int i = 0; i < props.Length; i++)
-            {
-                if ((props[i].QueueFlags & QueueFlags.GraphicsBit) != 0)
-                    physDeviceGraphicFamilyIndices.Add(i);
-                physDevicePresentationFamilyIndices.Add(i);
-                i++;
-            }
-
-            if (supports && physDevicePresentationFamilyIndices.Any() && physDeviceGraphicFamilyIndices.Any())
-            {
-                physDevice = dev;
-                graphicFamilyIndices = physDeviceGraphicFamilyIndices;
-                presentationFamilyIndices = physDevicePresentationFamilyIndices;
-                break;
-            }
-        }
-
-        if (physDevice.Handle == 0)
-            throw new();
-
-
-        List<DeviceQueueCreateInfo> deviceQueueCreateInfos = [];
-        float[] queuePriorities = [1, 1];
-        var graphicQueueIndex = (0, 0);
-        var presentationQueueIndex = (0, 0);
-
-        bool configured = false;
-        foreach (var graphicFamilyIndex in graphicFamilyIndices)
-        {
-            foreach (var presentationFamilyIndex in presentationFamilyIndices)
-            {
-                if (graphicFamilyIndex == presentationFamilyIndex)
-                {
-                    fixed (float* d = queuePriorities)
-                        deviceQueueCreateInfos.Add(new()
-                        {
-                            SType = StructureType.DeviceQueueCreateInfo,
-                            QueueFamilyIndex = (uint)graphicFamilyIndex,
-                            QueueCount = 1,
-                            PQueuePriorities = d
-                        });
-                    graphicQueueIndex = (graphicFamilyIndex, 0);
-                    presentationQueueIndex = (presentationFamilyIndex, 0);
-                    configured = true;
-                    break;
-                }
-            }
-
-            if (configured) break;
-        }
-
-        if (!configured)
-        {
-            fixed (float* d = queuePriorities)
-            {
-                graphicQueueIndex = (graphicFamilyIndices[0], 0);
-                deviceQueueCreateInfos.Add(new()
-                {
-                    SType = StructureType.DeviceQueueCreateInfo,
-                    QueueFamilyIndex = (uint)graphicFamilyIndices[0],
-                    QueueCount = 1,
-                    PQueuePriorities = d
-                });
-                presentationQueueIndex = (presentationFamilyIndices[0], 0);
-                deviceQueueCreateInfos.Add(new()
-                {
-                    SType = StructureType.DeviceQueueCreateInfo,
-                    QueueFamilyIndex = (uint)presentationFamilyIndices[0],
-                    QueueCount = 1,
-                    PQueuePriorities = d
-                });
-            }
-        }
-
-        Device logicalDevice = default;
-        fixed (DeviceQueueCreateInfo* i = deviceQueueCreateInfos.ToArray())
-        {
-            DeviceCreateInfo c = new()
-            {
-                SType = StructureType.DeviceCreateInfo,
-                QueueCreateInfoCount = (uint)deviceQueueCreateInfos.Count,
-                PQueueCreateInfos = i,
-                EnabledExtensionCount = 1,
-                PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr([KhrSwapchain.ExtensionName])
-            };
-            var c_ = vk.CreateDevice(physDevice, &c, null, &logicalDevice);
-            if (c_ != Result.Success)
-            {
-                throw new();
-            }
-        }
-
-        var graphicQueue =
-            vk.GetDeviceQueue(logicalDevice, (uint)graphicQueueIndex.Item1, (uint)graphicQueueIndex.Item2);
-        var presentationQueue = vk.GetDeviceQueue(logicalDevice, (uint)presentationQueueIndex.Item1,
-            (uint)presentationQueueIndex.Item2);
-
-
-        if (!vk.TryGetInstanceExtension<KhrSurface>(instance, out var ext))
-        {
-            throw new();
-        }
-
-        SurfaceCapabilitiesKHR cap = default;
-        if (ext.GetPhysicalDeviceSurfaceCapabilities(physDevice, surfaceKhr, &cap) != Result.Success)
-        {
-            throw new();
-        }
-
-        uint formatCount = 0;
-        ext.GetPhysicalDeviceSurfaceFormats(physDevice, surfaceKhr, &formatCount, null);
-        var formats = new SurfaceFormatKHR[formatCount];
-        fixed (SurfaceFormatKHR* f = formats)
-            if (ext.GetPhysicalDeviceSurfaceFormats(physDevice, surfaceKhr, &formatCount, f) != Result.Success)
-            {
-                throw new();
-            }
-
-
-        uint presCount = 0;
-        ext.GetPhysicalDeviceSurfacePresentModes(physDevice, surfaceKhr, &presCount, null);
-        var presFormats = new PresentModeKHR[presCount];
-        fixed (PresentModeKHR* f = presFormats)
-            if (ext.GetPhysicalDeviceSurfacePresentModes(physDevice, surfaceKhr, &presCount, f) != Result.Success)
-            {
-                throw new();
-            }
-
-
-        var swapchainImageFormat = formats.First().Format;
-        var swapchainColorSpace = formats.First().ColorSpace;
-        var swapchainExtent = cap.CurrentExtent;
-        var swapchainPresentMode =
-            presFormats.Contains(PresentModeKHR.FifoKhr) ? PresentModeKHR.FifoKhr : presFormats.First();
-
-        if (!vk.TryGetDeviceExtension<KhrSwapchain>(instance, logicalDevice, out var swapchainExt))
-        {
-            throw new();
-        }
-
-        var swInfo = new SwapchainCreateInfoKHR()
-        {
-            Surface = surfaceKhr,
-            MinImageCount = cap.MinImageCount,
-            ImageFormat = swapchainImageFormat,
-            ImageColorSpace = swapchainColorSpace,
-            ImageExtent = swapchainExtent,
-            ImageArrayLayers = 1,
-            ImageUsage = ImageUsageFlags.ColorAttachmentBit,
-            ImageSharingMode = SharingMode.Exclusive,
-            QueueFamilyIndexCount = 0,
-            PQueueFamilyIndices = null,
-            PreTransform = cap.CurrentTransform,
-            CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
-            PresentMode = swapchainPresentMode,
-            Clipped = true,
-            OldSwapchain = default,
-            SType = StructureType.SwapchainCreateInfoKhr
-        };
-        SwapchainKHR swapchainKhr = default;
-        if (swapchainExt.CreateSwapchain(logicalDevice, &swInfo, null, &swapchainKhr) != Result.Success)
-        {
-            throw new();
-        }
-
-        uint imgCount = 0;
-        swapchainExt.GetSwapchainImages(logicalDevice, swapchainKhr, &imgCount, null);
-        MediaTypeNames.Image[] images = new MediaTypeNames.Image[imgCount];
-        fixed (MediaTypeNames.Image* i = images)
-            if (swapchainExt.GetSwapchainImages(logicalDevice, swapchainKhr, &imgCount, i) != Result.Success)
-            {
-                throw new();
-            }
-
-
-        List<ImageView> imageViews = [with(capacity: images.Length)];
-        foreach (var image in images)
-        {
-            var inf = new ImageViewCreateInfo()
-            {
-                Image = image,
-                ViewType = ImageViewType.Type2D,
-                Format = swapchainImageFormat,
-                Components = new ComponentMapping
-                {
-                    R = ComponentSwizzle.Identity,
-                    G = ComponentSwizzle.Identity,
-                    B = ComponentSwizzle.Identity,
-                    A = ComponentSwizzle.Identity,
-                },
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1
-                },
-                SType = StructureType.ImageViewCreateInfo
-            };
-            if (vk.CreateImageView(logicalDevice, &inf, null, out var view) != Result.Success)
-            {
-                throw new();
-            }
-
-            imageViews.Add(view);
-        }
-
-        var swapchainAttachmentDescription = new AttachmentDescription()
-        {
-            Format = swapchainImageFormat,
-            Samples = SampleCountFlags.Count1Bit,
-            LoadOp = AttachmentLoadOp.Clear,
-            StoreOp = AttachmentStoreOp.Store,
-            StencilLoadOp = AttachmentLoadOp.DontCare,
-            StencilStoreOp = AttachmentStoreOp.DontCare,
-            InitialLayout = ImageLayout.Undefined,
-            FinalLayout = ImageLayout.PresentSrcKhr
-        };
-        var swapchainSubpassReference = new AttachmentReference()
-        {
-            Attachment = 0,
-            Layout = ImageLayout.ColorAttachmentOptimal
-        };
-        var swapchainSubpassDescription = new SubpassDescription()
-        {
-            PipelineBindPoint = PipelineBindPoint.Graphics,
-            ColorAttachmentCount = 1,
-            PColorAttachments = &swapchainSubpassReference
-        };
-        var swapchainSubpassDependencies = new SubpassDependency[]
-        {
-            new SubpassDependency
-            {
-                SrcSubpass = Vk.SubpassExternal,
-                DstSubpass = 0,
-                SrcStageMask = PipelineStageFlags.TopOfPipeBit,
-                DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                SrcAccessMask = 0,
-                DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
-                DependencyFlags = DependencyFlags.ByRegionBit
-            },
-            new SubpassDependency
-            {
-                SrcSubpass = 0,
-                DstSubpass = Vk.SubpassExternal,
-                SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                DstStageMask = PipelineStageFlags.BottomOfPipeBit,
-                SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
-                DstAccessMask = 0,
-                DependencyFlags = DependencyFlags.ByRegionBit
-            }
-        };
-        RenderPass pass;
-        fixed (SubpassDependency* d = swapchainSubpassDependencies)
-        {
-            var rpInfo = new RenderPassCreateInfo()
-            {
-                AttachmentCount = 1,
-                PAttachments = &swapchainAttachmentDescription,
-                SubpassCount = 1,
-                PSubpasses = &swapchainSubpassDescription,
-                DependencyCount = (uint)swapchainSubpassDependencies.Length,
-                PDependencies = d,
-                SType = StructureType.RenderPassCreateInfo
-            };
-            if (vk.CreateRenderPass(logicalDevice, &rpInfo, null, out pass) != Result.Success)
-            {
-                throw new();
-            }
-        }
-
-        List<Framebuffer> framebuffers = [with(capacity: (int)imgCount)];
-        foreach (var imageView in imageViews)
-        {
-            var ffInfo = new FramebufferCreateInfo
-            {
-                SType = StructureType.FramebufferCreateInfo,
-                RenderPass = pass,
-                AttachmentCount = 1,
-                PAttachments = &imageView,
-                Width = swapchainExtent.Width,
-                Height = swapchainExtent.Height,
-                Layers = 1
-            };
-            if (vk.CreateFramebuffer(logicalDevice, &ffInfo, null, out var framebuffer) != Result.Success)
-            {
-                throw new();
-            }
-
-            framebuffers.Add(framebuffer);
-        }
-
-        var vertices = new[]
-        {
-            0.0f, -0.5f, 1.0f, 0.0f, 0.0f,
-            0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
-            -0.5f, 0.5f, 0.0f, 0.0f, 1.0f
-        };
-
-        var bci = new BufferCreateInfo
-        {
-            SType = StructureType.BufferCreateInfo,
-            Size = (ulong)(sizeof(float) * vertices.Length),
-            Usage = BufferUsageFlags.VertexBufferBit,
-            SharingMode = SharingMode.Exclusive
-        };
-        if (vk.CreateBuffer(logicalDevice, &bci, null, out var buffer) != Result.Success)
-        {
-            throw new();
-        }
-
-        var bufferReqs = vk.GetBufferMemoryRequirements(logicalDevice, buffer);
-        var memoryProps = vk.GetPhysicalDeviceMemoryProperties(physDevice);
-        int? vertexBufferMemoryTypeIndex = null;
-        for (int memoryTypeIndex = 0; memoryTypeIndex < memoryProps.MemoryTypeCount; memoryTypeIndex++)
-        {
-            if ((bufferReqs.MemoryTypeBits & 1 << memoryTypeIndex) != 0 &&
-                (memoryProps.MemoryTypes[memoryTypeIndex].PropertyFlags & MemoryPropertyFlags.HostVisibleBit) != 0 &&
-                (memoryProps.MemoryTypes[memoryTypeIndex].PropertyFlags & MemoryPropertyFlags.HostCoherentBit) != 0)
-            {
-                vertexBufferMemoryTypeIndex = memoryTypeIndex;
-                break;
-            }
-        }
-
-        if (!vertexBufferMemoryTypeIndex.HasValue)
-            throw new();
-
-
-        var memAllocInfo = new MemoryAllocateInfo()
-        {
-            SType = StructureType.MemoryAllocateInfo,
-            AllocationSize = bufferReqs.Size,
-            MemoryTypeIndex = (uint)vertexBufferMemoryTypeIndex
-        };
-        if (vk.AllocateMemory(logicalDevice, &memAllocInfo, null, out var memory) != Result.Success)
-        {
-            throw new();
-        }
-
-        if (vk.BindBufferMemory(logicalDevice, buffer, memory, 0) != Result.Success)
-        {
-            throw new();
-        }
-
-        void* data;
-        if (vk.MapMemory(logicalDevice, memory, (ulong)0, bufferReqs.Size, MemoryMapFlags.None, &data) !=
-            Result.Success)
-        {
-            throw new();
-        }
-
-        Marshal.Copy(vertices, 0, (nint)data, vertices.Length);
-        vk.UnmapMemory(logicalDevice, memory);
-
-
-        var vert = CreateShaderModule(vk, logicalDevice, "shaders/triangle.vert.spv");
-        var frag = CreateShaderModule(vk, logicalDevice, "shaders/triangle.frag.spv");
-
-        PipelineLayout pipelineLayout = default;
-        var pipelineInfo = new PipelineLayoutCreateInfo()
-        {
-            SType = StructureType.PipelineLayoutCreateInfo
-        };
-        if (vk.CreatePipelineLayout(logicalDevice, &pipelineInfo, null, &pipelineLayout) != Result.Success)
-        {
-            throw new();
-        }
-
-        List<PipelineShaderStageCreateInfo> shaderStages =
-        [
-            new()
-            {
-                Stage = ShaderStageFlags.VertexBit,
-                Module = vert,
-                PName = (byte*)SilkMarshal.StringToPtr("main")
-            },
-            new()
-            {
-                Stage = ShaderStageFlags.FragmentBit,
-                Module = frag,
-                PName = (byte*)SilkMarshal.StringToPtr("main")
-            }
-        ];
-        Pipeline pipeline = default;
-        fixed (PipelineShaderStageCreateInfo* p = shaderStages.ToArray())
-        {
-            var vertexInputBinding = new VertexInputBindingDescription()
-            {
-                Binding = 0,
-                Stride = sizeof(float) * 5,
-                InputRate = VertexInputRate.Vertex
-            };
-            var vertexInputAttributes = new VertexInputAttributeDescription[]
-            {
-                new()
-                {
-                    Location = 0,
-                    Binding = 0,
-                    Format = Format.R32G32Sfloat,
-                    Offset = 0
-                },
-                new()
-                {
-                    Location = 1,
-                    Binding = 0,
-                    Format = Format.R32G32B32Sfloat,
-                    Offset = 2 * sizeof(float)
-                }
-            };
-            fixed (VertexInputAttributeDescription* v = vertexInputAttributes)
-            {
-                var vertexInputStateCreateInfo = new PipelineVertexInputStateCreateInfo()
-                {
-                    VertexBindingDescriptionCount = 1,
-                    PVertexBindingDescriptions = &vertexInputBinding,
-                    VertexAttributeDescriptionCount = 2,
-                    PVertexAttributeDescriptions = v
-                };
-                var inputAssemblyStateCreateInfo = new PipelineInputAssemblyStateCreateInfo()
-                {
-                    Topology = PrimitiveTopology.TriangleList,
-                    PrimitiveRestartEnable = false
-                };
-                var viewport = new Viewport()
-                {
-                    X = 0,
-                    Y = 0,
-                    Width = swapchainExtent.Width,
-                    Height = swapchainExtent.Height,
-                    MinDepth = 0,
-                    MaxDepth = 1,
-                };
-                var scissor = new Rect2D()
-                {
-                    Offset = new(0, 0),
-                    Extent = swapchainExtent
-                };
-                var viewPortStateCreateInfo = new PipelineViewportStateCreateInfo()
-                {
-                    ViewportCount = 1,
-                    PViewports = &viewport,
-                    ScissorCount = 1,
-                    PScissors = &scissor
-                };
-                var rasterizationStateCreateInfo = new PipelineRasterizationStateCreateInfo()
-                {
-                    DepthClampEnable = false,
-                    RasterizerDiscardEnable = false,
-                    PolygonMode = PolygonMode.Fill,
-                    CullMode = CullModeFlags.BackBit,
-                    FrontFace = FrontFace.Clockwise,
-                    DepthBiasEnable = false,
-                    LineWidth = 1
-                };
-                var multisampleStateCreateInfo = new PipelineMultisampleStateCreateInfo()
-                {
-                    RasterizationSamples = SampleCountFlags.Count1Bit,
-                    SampleShadingEnable = false
-                };
-                var depthStencilStateCreateInfo = new PipelineDepthStencilStateCreateInfo()
-                {
-                    DepthTestEnable = false,
-                    StencilTestEnable = false
-                };
-                var colorBlendAttachmentState = new PipelineColorBlendAttachmentState()
-                {
-                    BlendEnable = false,
-                    ColorWriteMask = ColorComponentFlags.RBit |
-                                     ColorComponentFlags.GBit |
-                                     ColorComponentFlags.BBit |
-                                     ColorComponentFlags.ABit
-                };
-                var colorBlendStateCreateInfo = new PipelineColorBlendStateCreateInfo()
-                {
-                    LogicOpEnable = false,
-                    AttachmentCount = 1,
-                    PAttachments = &colorBlendAttachmentState
-                };
-                var info = new GraphicsPipelineCreateInfo()
-                {
-                    SType = StructureType.GraphicsPipelineCreateInfo,
-                    StageCount = (uint)shaderStages.Count,
-                    PStages = p,
-                    PVertexInputState = &vertexInputStateCreateInfo,
-                    PInputAssemblyState = &inputAssemblyStateCreateInfo,
-                    PViewportState = &viewPortStateCreateInfo,
-                    PRasterizationState = &rasterizationStateCreateInfo,
-                    PMultisampleState = &multisampleStateCreateInfo,
-                    PDepthStencilState = &depthStencilStateCreateInfo,
-                    PColorBlendState = &colorBlendStateCreateInfo,
-                    PDynamicState = null,
-                    Layout = pipelineLayout,
-                    RenderPass = pass,
-                    Subpass = 0
-                };
-
-                Pipeline pp = default;
-                if (vk.CreateGraphicsPipelines(logicalDevice, default,
-                        new ReadOnlySpan<GraphicsPipelineCreateInfo>(ref info), null, &pp) != Result.Success)
-                {
-                    throw new();
-                }
-
-                ;
-                pipeline = pp;
-            }
-        }
-
-        CommandPoolCreateInfo cpi = new CommandPoolCreateInfo()
-        {
-            QueueFamilyIndex = (uint)graphicQueueIndex.Item1
-        };
-        if (vk.CreateCommandPool(logicalDevice, &cpi, null, out var pool) != Result.Success)
-        {
-            throw new();
-        }
-
-        var cbai = new CommandBufferAllocateInfo()
-        {
-            CommandPool = pool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = imgCount
-        };
-
-        CommandBuffer[] cmdBuffers = new CommandBuffer[cbai.CommandBufferCount];
-        fixed (CommandBuffer* b = cmdBuffers)
-            if (vk.AllocateCommandBuffers(logicalDevice, &cbai, b) != Result.Success)
-            {
-                throw new();
-            }
-
-        var clearValue = new ClearValue() { Color = new ClearColorValue(0, 0, 0, 1) };
-        for (int frameIndex = 0; frameIndex < cmdBuffers.Length; frameIndex++)
-        {
-            var commandBuffer = cmdBuffers[frameIndex];
-
-            var beginInfo = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.SimultaneousUseBit
-            };
-
-            if (vk.BeginCommandBuffer(commandBuffer, in beginInfo) != Result.Success)
-            {
-                throw new Exception("Failed to begin recording command buffer");
-            }
-
-            var renderPassInfo = new RenderPassBeginInfo
-            {
-                SType = StructureType.RenderPassBeginInfo,
-                RenderPass = pass,
-                Framebuffer = framebuffers[frameIndex],
-                RenderArea = new Rect2D
-                {
-                    Offset = new Offset2D { X = 0, Y = 0 },
-                    Extent = swapchainExtent
-                },
-                ClearValueCount = 1,
-                PClearValues = &clearValue
-            };
-
-            vk.CmdBeginRenderPass(commandBuffer, in renderPassInfo, SubpassContents.Inline);
-
-            vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipeline);
-
-            Buffer vertexBufferHandle = buffer;
-            ulong offset = 0;
-            vk.CmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBufferHandle, &offset);
-
-            uint vertexCount = (uint)(vertices.Length / 5);
-            vk.CmdDraw(commandBuffer, vertexCount, 1, 0, 0);
-
-            vk.CmdEndRenderPass(commandBuffer);
-
-            if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
-            {
-                throw new Exception("Failed to end recording command buffer");
-            }
-        }
-
-        uint currentFrame = 0;
-
-        var imageAvailableSemaphores = new Semaphore[imgCount];
-        var renderFinishedSemaphores = new Semaphore[imgCount];
-        var inFlightFences = new Fence[imgCount];
-
-        var semaphoreCreateInfo = new SemaphoreCreateInfo
-        {
-            SType = StructureType.SemaphoreCreateInfo
-        };
-
-        var fenceCreateInfo = new FenceCreateInfo
-        {
-            SType = StructureType.FenceCreateInfo,
-            Flags = FenceCreateFlags
-                .SignaledBit // Fence создается в сигнальном состоянии, чтобы первый кадр не заблокировал поток
-        };
-
-        for (int i = 0; i < imgCount; i++)
-        {
-            if (vk.CreateSemaphore(logicalDevice, in semaphoreCreateInfo, null, out imageAvailableSemaphores[i]) !=
-                Result.Success)
-            {
-                throw new Exception("Failed to create image available semaphore");
-            }
-
-            if (vk.CreateSemaphore(logicalDevice, in semaphoreCreateInfo, null, out renderFinishedSemaphores[i]) !=
-                Result.Success)
-            {
-                throw new Exception("Failed to create render finished semaphore");
-            }
-
-            if (vk.CreateFence(logicalDevice, in fenceCreateInfo, null, out inFlightFences[i]) != Result.Success)
-            {
-                throw new Exception("Failed to create in-flight fence");
-            }
-        }
-
-        PipelineStageFlags pipelineStageFlags = PipelineStageFlags.ColorAttachmentOutputBit;
-
-        // 1. Ожидание и сброс Fence
-        var fence = inFlightFences[currentFrame];
-        if (vk.WaitForFences(logicalDevice, 1, in fence, true, ulong.MaxValue) != Result.Success)
-        {
-            throw new Exception("Failed to wait for fence");
-        }
-
-        if (vk.ResetFences(logicalDevice, 1, in fence) != Result.Success)
-        {
-            throw new Exception("Failed to reset fence");
-        }
-
-// 2. Получение следующего изображения из Swapchain
-        uint currentImageIndex = 0;
-// khrSwapchain — полученное ранее расширение KhrSwapchain
-        if (swapchainExt.AcquireNextImage(logicalDevice, swapchainKhr, ulong.MaxValue,
-                imageAvailableSemaphores[currentFrame], default, ref currentImageIndex) != Result.Success)
-        {
-            throw new Exception("Failed to acquire next image");
-        }
-
-// 3. Отправка буфера команд в графическую очередь
-        var waitSemaphore = imageAvailableSemaphores[currentFrame];
-        var signalSemaphore = renderFinishedSemaphores[currentImageIndex];
-        var commandBuffer_ = cmdBuffers[currentImageIndex];
-        PipelineStageFlags waitStage = PipelineStageFlags.ColorAttachmentOutputBit;
-
-        var submitInfo = new SubmitInfo
-        {
-            SType = StructureType.SubmitInfo,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = &waitSemaphore,
-            PWaitDstStageMask = &waitStage,
-            CommandBufferCount = 1,
-            PCommandBuffers = &commandBuffer_,
-            SignalSemaphoreCount = 1,
-            PSignalSemaphores = &signalSemaphore
-        };
-
-        if (vk.QueueSubmit(graphicQueue, 1, in submitInfo, fence) != Result.Success)
-        {
-            throw new Exception("Failed to submit draw command buffer");
-        }
-
-// 4. Презентация изображения на экран
-        var swapchainHandle = swapchainKhr;
-        uint imageIndex = currentImageIndex;
-
-        var presentInfo = new PresentInfoKHR
-        {
-            SType = StructureType.PresentInfoKhr,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = &signalSemaphore,
-            SwapchainCount = 1,
-            PSwapchains = &swapchainHandle,
-            PImageIndices = &imageIndex
-        };
-
-        if (swapchainExt.QueuePresent(presentationQueue, in presentInfo) != Result.Success)
-        {
-            throw new Exception("Failed to present swapchain image");
-        }
-
-        currentFrame = (currentFrame + 1) % imgCount;
-
-        while (!window.IsClosing)
-        {
-            window.PollEvents();
-        }
-
-        Console.WriteLine("Done!");
-    }
-
-    static ShaderModule CreateShaderModule(Vk vk, Device device, string filePath)
-    {
-        // Читаем скомпилированный SPIR-V файл в виде массива байт
-        byte[] byteCode = File.ReadAllBytes(filePath);
-
-        if (byteCode.Length % 4 != 0)
-        {
-            throw new Exception($"Файл {filePath} имеет некорректный размер SPIR-V (должен быть кратен 4 байтам).");
-        }
-
-        fixed (byte* pCode = byteCode)
-        {
-            var createInfo = new ShaderModuleCreateInfo
-            {
-                SType = StructureType.ShaderModuleCreateInfo,
-                CodeSize = (nuint)byteCode.Length, // Размер в БАЙТАХ
-                PCode = (uint*)pCode // Указатель на uint*
-            };
-
-            if (vk.CreateShaderModule(device, in createInfo, null, out var shaderModule) != Result.Success)
-            {
-                throw new Exception($"Не удалось создать ShaderModule из файла: {filePath}");
-            }
-
-            return shaderModule;
-        }
-    }
-
-    static SurfaceKHR CreateSurface(Instance instance)
-    {
-        VkNonDispatchableHandle h = new();
-        var e = Glfw.GetApi().CreateWindowSurface(instance.ToHandle(), (WindowHandle*)window.Handle, null, &h);
-        if (h.Handle == 0)
-            throw new();
-        return h.ToSurface();
-    }
-
-    static PhysicalDevice[] GetPhysicalDevices(Instance instance)
-    {
-        uint count = 0;
-
-        vk.EnumeratePhysicalDevices(instance, &count, null);
-
-        var properties = new PhysicalDevice[count];
-
-        fixed (PhysicalDevice* ptr = properties)
-        {
-            vk.EnumeratePhysicalDevices(instance, &count, ptr);
-        }
-
-        return properties
-            .Take((int)count)
-            .ToArray();
-    }
-
-    static QueueFamilyProperties[] GetDeviceQueueProps(PhysicalDevice physicalDevice)
-    {
-        uint count = 0;
-
-        vk.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, null);
-
-        var properties = new QueueFamilyProperties[count];
-
-        fixed (QueueFamilyProperties* ptr = properties)
-        {
-            vk.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, ptr);
-        }
-
-        return properties
-            .Take((int)count)
-            .ToArray();
-    }
-
-    static string[] GetDeviceExtensions(PhysicalDevice physicalDevice)
-    {
-        uint count = 0;
-
-        vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &count, null);
-
-        var properties = new ExtensionProperties[count];
-
-        fixed (ExtensionProperties* ptr = properties)
-        {
-            vk.EnumerateDeviceExtensionProperties(physicalDevice, (byte*)null, &count, ptr);
-        }
-
-        return properties
-            .Take((int)count)
-            .Select(x => SilkMarshal.PtrToString((nint)x.ExtensionName)!)
-            .ToArray();
-    }
-
-    static string[] GetInstanceLayers()
-    {
-        uint count = 0;
-
-        vk.EnumerateInstanceLayerProperties(&count, null);
-
-        var properties = new LayerProperties[count];
-
-        fixed (LayerProperties* ptr = properties)
-        {
-            vk.EnumerateInstanceLayerProperties(&count, ptr);
-        }
-
-        return properties
-            .Take((int)count)
-            .Select(x => SilkMarshal.PtrToString((nint)x.LayerName)!)
-            .ToArray();
-    }
-
-    static string[] GetInstanceExtensions()
-    {
-        uint count = 0;
-
-        vk.EnumerateInstanceExtensionProperties((byte*)0, &count, null);
-
-        var properties = new ExtensionProperties[count];
-
-        fixed (ExtensionProperties* ptr = properties)
-        {
-            vk.EnumerateInstanceExtensionProperties((byte*)0, &count, ptr);
-        }
-
-        return properties
-            .Take((int)count)
-            .Select(x => SilkMarshal.PtrToString((nint)x.ExtensionName)!)
-            .ToArray();
-    }
-
-    static List<string> ByteToArray(byte** data, int count)
-    {
-        List<string> s = [];
-        for (int i = 0; i < count; i++)
-            s.Add(SilkMarshal.PtrToString((nint)data[i])!);
-        return s;
-    }
-#endif
 }

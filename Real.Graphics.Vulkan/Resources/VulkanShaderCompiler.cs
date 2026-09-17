@@ -83,10 +83,17 @@ internal sealed class VulkanShaderCompiler
                     OptimizationLevel.Performance);
             }
 
+            // Ветки "#if defined(VULKAN)" в шейдерах (например main.vert)
+            // полагаются на этот макрос, чтобы переключиться на push_constant
+            // вместо loose-uniform, который не соответствует тому, что кладёт
+            // CmdPushConstants в VulkanCommandList.SetUniform.
+            //shaderc.CompileOptionsAddMacroDefinition(options, "VULKAN", (nuint)6, "1", (nuint)1);
+
             var result = shaderc.CompileIntoSpv(
                 compiler,
                 source,
                 (nuint)source.Length,
+
                 kind,
                 fileName,
                 "main",
