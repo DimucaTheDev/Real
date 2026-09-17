@@ -10,30 +10,41 @@ interface PipelineEditorProps {
 export const PipelineEditor: React.FC<PipelineEditorProps> = ({ onLogMessage }) => {
   const [activeFile, setActiveFile] = useState<'vert' | 'frag' | 'spirv'>('vert');
   const [vertCode, setVertCode] = useState(`#version 300 es
-layout (location = 0) in vec2 aPos;
+layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aColor;
 
 out vec3 ourColor;
-uniform float uAngle;
-uniform float uScale;
+out vec3 vPos;
+
+uniform mat4 uMVP;
+uniform mat4 uModel;
 
 void main() {
-    float cosA = cos(uAngle);
-    float sinA = sin(uAngle);
-    mat2 rot = mat2(cosA, -sinA, sinA, cosA);
-    vec2 pos = rot * (aPos * uScale);
-    gl_Position = vec4(pos, 0.0, 1.0);
+    gl_Position = uMVP * vec4(aPos, 1.0);
     ourColor = aColor;
+    vPos = (uModel * vec4(aPos, 1.0)).xyz;
 }`);
 
   const [fragCode, setFragCode] = useState(`#version 300 es
 precision highp float;
 in vec3 ourColor;
+in vec3 vPos;
 out vec4 FragColor;
 
+uniform int uLighting;
+
 void main() {
-    // RealEngine RHI default fragment output
-    FragColor = vec4(ourColor, 1.0);
+    if (uLighting == 1) {
+        vec3 dx = dFdx(vPos);
+        vec3 dy = dFdy(vPos);
+        vec3 N = normalize(cross(dx, dy));
+        vec3 L = normalize(vec3(0.5, 0.8, 1.0));
+        float diff = max(dot(N, L), 0.0);
+        vec3 col = ourColor * (0.45 + 0.55 * diff);
+        FragColor = vec4(col, 1.0);
+    } else {
+        FragColor = vec4(ourColor, 1.0);
+    }
 }`);
 
   const [compileStatus, setCompileStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -46,7 +57,7 @@ void main() {
         setCompileStatus('success');
         setErrorMessage('');
         fmodEngine.playSoundEvent('pipeline_compile');
-        onLogMessage('VulkanPipelinePool: Recompiled PipelineStateObject testPipeline successfully', 'INF');
+        onLogMessage('VulkanPipelinePool: Recompiled PipelineStateObject cubePipeline successfully', 'INF');
       } else {
         setCompileStatus('error');
         setErrorMessage('GLSL compilation or link error. Check console or shader syntax.');
@@ -59,38 +70,44 @@ void main() {
   };
 
   const spirvDisassembly = `; SPIR-V Disassembly (RealEngine Vulkan Backend)
+; Target: 3D Rotating Colored Cube
 ; Version: 1.5
 ; Generator: Khronos Glslang; 11
-; Bound: 32
+; Bound: 48
 ; Schema: 0
                OpCapability Shader
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
-               OpEntryPoint Vertex %main "main" %aPos %aColor %ourColor
+               OpEntryPoint Vertex %main "main" %aPos %aColor %ourColor %vPos %gl_Position
                OpSource GLSL 460
                OpName %main "main"
                OpName %aPos "aPos"
                OpName %aColor "aColor"
                OpName %ourColor "ourColor"
+               OpName %vPos "vPos"
+               OpName %uMVP "uMVP"
+               OpName %uModel "uModel"
                OpDecorate %aPos Location 0
                OpDecorate %aColor Location 1
                OpDecorate %ourColor Location 0
+               OpDecorate %vPos Location 1
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
       %float = OpTypeFloat 32
-    %v2float = OpTypeVector %float 2
-%_ptr_Input_v2float = OpTypePointer Input %v2float
-       %aPos = OpVariable %_ptr_Input_v2float Input
     %v3float = OpTypeVector %float 3
 %_ptr_Input_v3float = OpTypePointer Input %v3float
+       %aPos = OpVariable %_ptr_Input_v3float Input
      %aColor = OpVariable %_ptr_Input_v3float Input
 %_ptr_Output_v3float = OpTypePointer Output %v3float
    %ourColor = OpVariable %_ptr_Output_v3float Output
+       %vPos = OpVariable %_ptr_Output_v3float Output
     %v4float = OpTypeVector %float 4
 %_ptr_Output_v4float = OpTypePointer Output %v4float
 %gl_Position = OpVariable %_ptr_Output_v4float Output
-    %float_0 = OpConstant %float 0
-    %float_1 = OpConstant %float 1`;
+ %mat4v4float = OpTypeMatrix %v4float 4
+%_ptr_Uniform_mat4v4float = OpTypePointer Uniform %mat4v4float
+       %uMVP = OpVariable %_ptr_Uniform_mat4v4float Uniform
+     %uModel = OpVariable %_ptr_Uniform_mat4v4float Uniform`;
 
   return (
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden bg-neutral-950">
@@ -213,15 +230,15 @@ void main() {
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-500">Stride:</span>
-              <span className="text-neutral-200">20 Bytes (5 Floats)</span>
+              <span className="text-neutral-200">24 Bytes (6 Floats)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-500">Attr 0 (Position):</span>
-              <span className="text-neutral-200">Format.Rg8Unorm, Offset: 0</span>
+              <span className="text-neutral-200">Format.Rgb32Float (Loc 0, Offset: 0)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-500">Attr 1 (Color):</span>
-              <span className="text-neutral-200">Format.Rgba8Unorm, Offset: 8</span>
+              <span className="text-neutral-200">Format.Rgb32Float (Loc 1, Offset: 12)</span>
             </div>
           </div>
 
@@ -239,7 +256,7 @@ void main() {
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-500">DepthStencilState:</span>
-              <span className="text-neutral-200">Disabled (2D Triangle)</span>
+              <span className="text-emerald-400">DepthTest.LEQUAL (3D Cube)</span>
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-500">Color Attachments:</span>

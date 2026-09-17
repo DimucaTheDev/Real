@@ -1,6 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Pause, RotateCw, Eye, Layers, Sliders, Maximize2, Shield, Zap } from 'lucide-react';
-import { engineRHI } from '../engine/rhi';
+import {
+  RotateCw,
+  Sliders,
+  Zap,
+  Box,
+  Palette,
+  Sun,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react';
+import { engineRHI, ColorTheme } from '../engine/rhi';
 import { fmodEngine } from '../engine/audio';
 import { PrimitiveTopology, CullMode } from '../types/rhi';
 
@@ -20,19 +29,26 @@ export const Viewport: React.FC<ViewportProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [rotationSpeed, setSpeed] = useState(1.2);
-  const [scale, setScale] = useState(1.1);
+  const [scale, setScale] = useState(1.15);
   const [topology, setTopology] = useState<PrimitiveTopology>(PrimitiveTopology.TriangleList);
   const [cullMode, setCullMode] = useState<CullMode>(CullMode.None);
   const [blendEnabled, setBlendEnabled] = useState(false);
+  const [lighting, setLighting] = useState(true);
+  const [colorTheme, setColorTheme] = useState<ColorTheme>('spectrum');
   const [clearColorHex, setClearColorHex] = useState('#141820');
+
+  // Drag-to-orbit state
+  const isDraggingRef = useRef(false);
+  const lastMousePos = useRef({ x: 0, y: 0 });
+  const didDragRef = useRef(false);
 
   useEffect(() => {
     if (!canvasRef.current) return;
     const ok = engineRHI.init(canvasRef.current);
     if (ok) {
       onLogMessage(`GraphicsDevice initialized with ${backend} RHI backend`, 'INF');
-      onLogMessage('VulkanPipelinePool created PSO: testPipeline (Topology: TriangleList)', 'DBG');
-      onLogMessage('VulkanBufferPool allocated TriangleVertexBuffer (60 bytes)', 'DBG');
+      onLogMessage('VulkanPipelinePool created PSO: testPipeline (Topology: TriangleList, DepthTest: Enabled)', 'DBG');
+      onLogMessage('VulkanBufferPool allocated CubeVertexBuffer (864 bytes, 36 vertices)', 'DBG');
     }
   }, [backend]);
 
@@ -57,6 +73,34 @@ export const Viewport: React.FC<ViewportProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [isPaused]);
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    isDraggingRef.current = true;
+    didDragRef.current = false;
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - lastMousePos.current.x;
+    const dy = e.clientY - lastMousePos.current.y;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+      didDragRef.current = true;
+    }
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+    engineRHI.addManualRotation(dx, dy);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    isDraggingRef.current = false;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    if (!didDragRef.current) {
+      // Click without dragging triggers FMOD sound
+      fmodEngine.playSoundEvent('triangle_hit');
+      onLogMessage('FMOD Event triggered: event:/sfx/cube_hit', 'VRB');
+    }
+  };
+
   const handleTopologyChange = (top: PrimitiveTopology) => {
     setTopology(top);
     engineRHI.setTopology(top);
@@ -79,11 +123,32 @@ export const Viewport: React.FC<ViewportProps> = ({
     onLogMessage(`BlendState.Enabled toggled to: ${next}`, 'DBG');
   };
 
+  const handleLightingToggle = () => {
+    const next = !lighting;
+    setLighting(next);
+    engineRHI.setLightingEnabled(next);
+    fmodEngine.playSoundEvent('click');
+    onLogMessage(`Shader uniform uLighting toggled: ${next ? 'Directional Shading' : 'Vivid Flat'}`, 'DBG');
+  };
+
+  const handleThemeChange = (theme: ColorTheme) => {
+    setColorTheme(theme);
+    engineRHI.setColorTheme(theme);
+    fmodEngine.playSoundEvent('click');
+    onLogMessage(`Cube vertex colors updated: palette '${theme}' re-uploaded to VBO`, 'INF');
+  };
+
   const handleAutoRotateToggle = () => {
     const next = !autoRotate;
     setAutoRotate(next);
     engineRHI.setAutoRotate(next);
     fmodEngine.playSoundEvent('click');
+  };
+
+  const handleResetRotation = () => {
+    engineRHI.resetRotation();
+    fmodEngine.playSoundEvent('click');
+    onLogMessage('Camera / Cube orientation reset to standard isometric view', 'VRB');
   };
 
   const handleSpeedChange = (val: number) => {
@@ -104,11 +169,6 @@ export const Viewport: React.FC<ViewportProps> = ({
     engineRHI.setClearColor(r, g, b, 1.0);
   };
 
-  const triggerTriangleHit = () => {
-    fmodEngine.playSoundEvent('triangle_hit');
-    onLogMessage('FMOD Event triggered: event:/sfx/triangle_hit', 'VRB');
-  };
-
   return (
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden bg-neutral-950">
       {/* Canvas Viewport Area */}
@@ -116,9 +176,11 @@ export const Viewport: React.FC<ViewportProps> = ({
         <div className="relative w-full h-full rounded-xl overflow-hidden border border-neutral-800 bg-neutral-900/50 shadow-2xl flex items-center justify-center">
           <canvas
             ref={canvasRef}
-            onClick={triggerTriangleHit}
-            className="w-full h-full cursor-pointer select-none"
-            title="Click viewport to trigger FMOD hit sound event"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            className="w-full h-full cursor-grab active:cursor-grabbing select-none touch-none"
+            title="Drag with mouse to orbit the 3D cube. Click to trigger FMOD audio event."
           />
 
           {/* Viewport Overlay HUD (Top-Left) */}
@@ -128,20 +190,27 @@ export const Viewport: React.FC<ViewportProps> = ({
               <span>RealEngine {backend} Swapchain Viewport</span>
             </div>
             <div className="text-[11px] text-neutral-400">
-              Format: <span className="text-neutral-200">B8G8R8A8_UNORM</span> | Colorspace:{' '}
-              <span className="text-neutral-200">SRGB_NONLINEAR</span>
+              Mesh: <span className="text-emerald-400 font-semibold">3D Rotating Colored Cube</span> &bull; Vertices:{' '}
+              <span className="text-neutral-200">36 (6 Faces, 12 Triangles)</span>
             </div>
             <div className="text-[11px] text-neutral-400">
-              Pass: <span className="text-emerald-400 font-semibold">TestPass</span> &bull; Vertices:{' '}
-              <span className="text-neutral-200">3 (Pos2f + Col3f)</span>
+              Pass: <span className="text-emerald-400 font-semibold">TestPass</span> &bull; Format:{' '}
+              <span className="text-neutral-200">B8G8R8A8_UNORM + D24_UNORM_S8</span>
             </div>
             <div className="text-[10px] text-neutral-500 pt-0.5">
-              Click canvas to play FMOD Studio audio event
+              Drag on viewport to orbit cube &bull; Click to trigger FMOD audio
             </div>
           </div>
 
           {/* Viewport Overlay HUD (Top-Right) */}
           <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-neutral-950/80 backdrop-blur-md border border-neutral-800 rounded-lg p-1.5 text-xs font-mono">
+            <button
+              onClick={handleResetRotation}
+              title="Reset View Orientation"
+              className="p-1 rounded text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
             <button
               onClick={handleAutoRotateToggle}
               title="Toggle Auto-Rotation"
@@ -168,14 +237,17 @@ export const Viewport: React.FC<ViewportProps> = ({
             RHI Pipeline Controls
           </h2>
           <p className="text-[11px] text-neutral-500">
-            Dynamically adjust graphics device descriptors and rasterizer states.
+            RealEngine 3D rotating colored cube descriptors, rasterizer, and shader controls.
           </p>
         </div>
 
         {/* Primitive Topology */}
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-neutral-300 flex justify-between">
-            <span>Primitive Topology</span>
+            <span className="flex items-center gap-1">
+              <Box className="w-3 h-3 text-red-400" />
+              Primitive Topology
+            </span>
             <span className="text-[10px] text-neutral-500 font-mono">PipelineDescriptor</span>
           </label>
           <div className="grid grid-cols-3 gap-1.5">
@@ -197,6 +269,60 @@ export const Viewport: React.FC<ViewportProps> = ({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Color Theme Selector */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-neutral-300 flex justify-between">
+            <span className="flex items-center gap-1">
+              <Palette className="w-3 h-3 text-amber-400" />
+              Cube Color Palette
+            </span>
+            <span className="text-[10px] text-neutral-500 font-mono">VBO Colors</span>
+          </label>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              { id: 'spectrum' as ColorTheme, label: 'Spectrum (6-Color)' },
+              { id: 'cyberpunk' as ColorTheme, label: 'Cyberpunk Neon' },
+              { id: 'pastel' as ColorTheme, label: 'Soft Pastel' },
+              { id: 'monochrome' as ColorTheme, label: 'Titanium Steel' },
+            ].map((theme) => (
+              <button
+                key={theme.id}
+                onClick={() => handleThemeChange(theme.id)}
+                className={`py-1.5 px-2 rounded text-[11px] font-medium border text-left transition-colors ${
+                  colorTheme === theme.id
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                    : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200'
+                }`}
+              >
+                {theme.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Shading & Directional Lighting */}
+        <div className="flex items-center justify-between p-2.5 rounded-lg bg-neutral-950 border border-neutral-800">
+          <div>
+            <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+              Directional Shading
+            </div>
+            <div className="text-[10px] text-neutral-500">Screen-space derivative normals</div>
+          </div>
+          <button
+            onClick={handleLightingToggle}
+            className={`w-9 h-5 rounded-full transition-colors relative ${
+              lighting ? 'bg-amber-600' : 'bg-neutral-800'
+            }`}
+          >
+            <div
+              className={`w-3.5 h-3.5 rounded-full bg-white transition-transform absolute top-0.5 ${
+                lighting ? 'left-4.5' : 'left-1'
+              }`}
+            />
+          </button>
         </div>
 
         {/* Rasterizer Cull Mode */}
@@ -246,7 +372,10 @@ export const Viewport: React.FC<ViewportProps> = ({
         <div className="space-y-3 pt-2 border-t border-neutral-800/80">
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs text-neutral-300">
-              <span>Rotation Speed</span>
+              <span className="flex items-center gap-1.5">
+                <RotateCw className="w-3.5 h-3.5 text-neutral-400" />
+                Rotation Speed
+              </span>
               <span className="font-mono text-neutral-400">{rotationSpeed.toFixed(1)}x</span>
             </div>
             <input
@@ -262,13 +391,16 @@ export const Viewport: React.FC<ViewportProps> = ({
 
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs text-neutral-300">
-              <span>Geometry Scale</span>
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-neutral-400" />
+                Cube Scale
+              </span>
               <span className="font-mono text-neutral-400">{scale.toFixed(2)}</span>
             </div>
             <input
               type="range"
-              min="0.4"
-              max="1.8"
+              min="0.5"
+              max="2.0"
               step="0.05"
               value={scale}
               onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
@@ -299,22 +431,23 @@ export const Viewport: React.FC<ViewportProps> = ({
         <div className="mt-auto pt-3 border-t border-neutral-800/80 space-y-1.5 text-[11px] font-mono text-neutral-400">
           <div className="flex justify-between">
             <span>Buffer Handle:</span>
-            <span className="text-neutral-200">0x0001 (TriangleVBO)</span>
+            <span className="text-neutral-200">0x0001 (CubeVertexBuffer)</span>
           </div>
           <div className="flex justify-between">
             <span>Pipeline Handle:</span>
-            <span className="text-neutral-200">0x0002 (testPipeline)</span>
+            <span className="text-neutral-200">0x0002 (cubePipeline)</span>
           </div>
           <div className="flex justify-between">
-            <span>Stride:</span>
-            <span className="text-neutral-200">20 bytes</span>
+            <span>Vertex Layout:</span>
+            <span className="text-neutral-200">Pos3f + Col3f (24B Stride)</span>
           </div>
           <div className="flex justify-between">
-            <span>Vertex Attributes:</span>
-            <span className="text-neutral-200">Loc 0: Rg8, Loc 1: Rgba8</span>
+            <span>Depth/Stencil:</span>
+            <span className="text-emerald-400">LEQUAL (Depth Enabled)</span>
           </div>
         </div>
       </aside>
     </div>
   );
 };
+
