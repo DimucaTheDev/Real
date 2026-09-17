@@ -13,11 +13,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Serilog" Version="4.4.0" /> 
-    </ItemGroup>
-
-    <ItemGroup>
+      <PackageReference Include="Serilog" Version="4.4.0" />
       <ProjectReference Include="..\Real.Fmod\Real.Fmod.csproj" PrivateAssets="compile" />
-    </ItemGroup>
+    </ItemGroup> 
 
 </Project>

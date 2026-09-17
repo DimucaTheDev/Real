@@ -12,7 +12,6 @@
   </Folder>
   <Folder Name="/Engine/Windowing/">
     <Project Path="Real.Windowing.Glfw/Real.Windowing.Glfw.csproj" />
-    <Project Path="Real.Windowing.Headless/Real.Windowing.Headless.csproj" />
   </Folder>
   <Folder Name="/Runtime/">
     <Project Path="Test/Test.csproj" />
