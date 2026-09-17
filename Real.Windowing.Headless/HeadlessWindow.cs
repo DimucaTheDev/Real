@@ -1,5 +1,6 @@
 ﻿namespace Real.Windowing.Headless;
 
+[Obsolete("Doesnt work", true)]
 public class HeadlessWindow(GraphicsApi api) : IWindow
 {
     public void Dispose() { }

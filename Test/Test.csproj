@@ -25,4 +25,43 @@
       </None>
     </ItemGroup>
 
+    <PropertyGroup>
+        <FmodProjectDir>$(MSBuildThisFileDirectory)..\Real.Fmod\</FmodProjectDir>
+    </PropertyGroup>
+
+    <!-- Debug -->
+    <ItemGroup Condition="'$(RuntimeIdentifier)' == '' AND '$(Configuration)' == 'Debug'">
+        <None Include="$(FmodProjectDir)runtimes\**\*.*">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <TargetPath>runtimes\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+            <Visible>false</Visible>
+        </None>
+    </ItemGroup>
+    <ItemGroup Condition="'$(RuntimeIdentifier)' != '' AND '$(Configuration)' == 'Debug'">
+        <FmodNativeFiles Include="$(FmodProjectDir)runtimes/$(RuntimeIdentifier)/native/*L.*" />
+        <None Include="@(FmodNativeFiles)">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Link>%(Filename)%(Extension)</Link>
+        </None>
+    </ItemGroup>
+
+    <!-- Release -->
+    <ItemGroup Condition="'$(RuntimeIdentifier)' != '' AND '$(Configuration)' == 'Release'">
+        <FmodNativeFiles Include="$(FmodProjectDir)runtimes/$(RuntimeIdentifier)/native/*.*" Exclude="$(FmodProjectDir)runtimes/$(RuntimeIdentifier)/native/*L.*" />
+        <None Include="@(FmodNativeFiles)">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Link>%(Filename)%(Extension)</Link>
+        </None>
+    </ItemGroup>
+
+    <!-- Гарантированное попадание в publish (single-file/self-contained игнорирует CopyToOutputDirectory) -->
+    <Target Name="AddFmodNativeToPublish" BeforeTargets="ComputeFilesToPublish">
+        <ItemGroup>
+            <ResolvedFileToPublish Include="@(FmodNativeFiles)">
+                <RelativePath>%(FmodNativeFiles.Filename)%(FmodNativeFiles.Extension)</RelativePath>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+            </ResolvedFileToPublish>
+        </ItemGroup>
+    </Target>
+
 </Project>

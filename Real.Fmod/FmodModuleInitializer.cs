@@ -7,33 +7,39 @@ namespace Real.Fmod;
 internal static class FmodModuleInitializer
 {
     [ModuleInitializer]
-    internal static void Init()
+    public static void Initialize()
     {
-        NativeLibrary.SetDllImportResolver(Assembly.GetExecutingAssembly(), ResolveDll);
+        //its needed to laod lib.so before its tries to load lib.so.14, which doesnt exist 
+        NativeLibrary.SetDllImportResolver(typeof(FmodModuleInitializer).Assembly, Resolve);
     }
 
-    private static IntPtr ResolveDll(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+    private static IntPtr Resolve(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
-        string extension = OperatingSystem.IsWindows() ? ".dll"
-            : OperatingSystem.IsLinux() ? ".so"
-            : ".dylib";
+        if (libraryName != "fmod" && libraryName != "fmodstudio")
+            return IntPtr.Zero;
 
-        string actualName = (!OperatingSystem.IsWindows() && !libraryName.StartsWith("lib"))
-            ? $"lib{libraryName}"
-            : libraryName;
+        string baseDir = AppContext.BaseDirectory;
+        bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-        if (!actualName.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
-        {
-            actualName += extension;
-        }
+        string coreFile = FindExisting(baseDir, isWindows ? "fmod.dll" : "libfmod.so",
+            isWindows ? "fmodL.dll" : "libfmodL.so");
+ 
+        IntPtr coreHandle = NativeLibrary.Load(coreFile);
 
-        string nativePath = Path.Combine(AppContext.BaseDirectory, "engine", "natives", actualName);
+        if (libraryName == "fmod")
+            return coreHandle;
 
-        if (File.Exists(nativePath))
-        {
-            return NativeLibrary.Load(nativePath);
-        } 
-        
-        return IntPtr.Zero;
+        string studioFile = FindExisting(baseDir, isWindows ? "fmodstudio.dll" : "libfmodstudio.so",
+            isWindows ? "fmodstudioL.dll" : "libfmodstudioL.so");
+        return NativeLibrary.Load(studioFile);
+    }
+
+    private static string FindExisting(string baseDir, string release, string debug)
+    {
+        string releasePath = Path.Combine(baseDir, release);
+        string debugPath = Path.Combine(baseDir, debug);
+        if (File.Exists(releasePath)) return releasePath;
+        if (File.Exists(debugPath)) return debugPath;
+        throw new DllNotFoundException($"Не найден ни {release}, ни {debug} в {baseDir}");
     }
 }

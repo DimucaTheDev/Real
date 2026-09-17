@@ -190,7 +190,7 @@ public unsafe class GlfwWindow : IWindow
     }
 
     private void CreateWindow()
-    {
+    { 
         _glfw.WindowHint(WindowHintBool.Visible, false);
         _glfw.WindowHint(WindowHintBool.Resizable, Border == WindowBorder.Resizable);
         _glfw.WindowHint(WindowHintBool.Decorated, Border != WindowBorder.Hidden);

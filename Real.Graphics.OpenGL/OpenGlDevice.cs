@@ -91,6 +91,8 @@ public sealed class OpenGlDevice : IGraphicsDevice
             return addr;
         }));
 
+        _gl.Enable(EnableCap.FramebufferSrgb);
+        
         if (enableValidation)
         {
             try
@@ -109,7 +111,7 @@ public sealed class OpenGlDevice : IGraphicsDevice
                 // Ignored if debug output not supported on this platform
             }
         }
-
+ 
         _bufferPool = new OpenGlBufferPool(_gl);
         _texturePool = new OpenGlTexturePool(_gl);
         _samplerPool = new OpenGlSamplerPool(_gl);

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Real;
 using Real.Graphics.OpenGL;
 using Real.Graphics.Rhi;
 using Real.Graphics.Rhi.Descriptors;
@@ -23,6 +24,8 @@ unsafe class Program
 
     static void Main(string[] args)
     {
+        Console.WriteLine("FMOD: " + SoundTest.Test());
+
         var api = Enum.Parse<GraphicsApi>(args.FirstOrDefault("vulkan")!, true);
         window = new GlfwWindow(api);
         IGraphicsBackendFactory factory = api switch
