@@ -67,19 +67,21 @@ internal sealed class OpenGlPipelinePool : IDisposable
         _gl.DetachShader(program, vs.ShaderId);
         _gl.DetachShader(program, fs.ShaderId);
 
-        // Create Vertex Array Object (VAO) via Direct State Access
-        _gl.CreateVertexArrays(1, out uint vao);
+        // Create Vertex Array Object (VAO)
+        _gl.GenVertexArrays(1, out uint vao);
+        _gl.BindVertexArray(vao);
         if (descriptor.VertexLayout.Attributes != null)
         {
             foreach (var attr in descriptor.VertexLayout.Attributes)
             {
-                _gl.EnableVertexArrayAttrib(vao, attr.Location);
+                _gl.EnableVertexAttribArray(attr.Location);
                 var (size, type, normalized) = GlFormatMap.ToVertexAttrib(attr.Format);
-                _gl.VertexArrayAttribFormat(vao, attr.Location, size, type, normalized, attr.Offset);
-                _gl.VertexArrayAttribBinding(vao, attr.Location, 0);
+                _gl.VertexAttribFormat(attr.Location, size, type, normalized, attr.Offset);
+                _gl.VertexAttribBinding(attr.Location, 0);
             }
         }
-        _gl.VertexArrayBindingDivisor(vao, 0, 0);
+        _gl.VertexBindingDivisor(0, 0);
+        _gl.BindVertexArray(0);
 
         var topology = GlTopologyTranslator.ToGl(descriptor.Topology);
         var entry = new OpenGlPipelineEntry(program, vao, descriptor, topology);

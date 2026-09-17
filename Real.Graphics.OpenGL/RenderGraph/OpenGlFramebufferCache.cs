@@ -29,15 +29,17 @@ internal sealed class OpenGlFramebufferCache : IDisposable
             return cachedFbo;
         }
 
-        _gl.CreateFramebuffers(1, out uint fbo);
+        _gl.GenFramebuffers(1, out uint fbo);
         if (fbo == 0)
             throw new InvalidOperationException("Failed to create OpenGL framebuffer.");
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
 
         var drawBuffers = new GLEnum[colorWrites.Count];
         for (int i = 0; i < colorWrites.Count; i++)
         {
             var tex = _textures.Get(colorWrites[i]);
-            _gl.NamedFramebufferTexture(fbo, FramebufferAttachment.ColorAttachment0 + i, tex.Handle, 0);
+            _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0 + i, TextureTarget.Texture2D, tex.Handle, 0);
             drawBuffers[i] = GLEnum.ColorAttachment0 + i;
         }
 
@@ -49,23 +51,25 @@ internal sealed class OpenGlFramebufferCache : IDisposable
                 ? FramebufferAttachment.DepthStencilAttachment
                 : FramebufferAttachment.DepthAttachment;
 
-            _gl.NamedFramebufferTexture(fbo, attachment, depthTex.Handle, 0);
+            _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, attachment, TextureTarget.Texture2D, depthTex.Handle, 0);
         }
 
         if (drawBuffers.Length > 0)
         {
             fixed (GLEnum* pDrawBuffers = drawBuffers)
             {
-                _gl.NamedFramebufferDrawBuffers(fbo, (uint)drawBuffers.Length, pDrawBuffers);
+                _gl.DrawBuffers((uint)drawBuffers.Length, pDrawBuffers);
             }
         }
         else
         {
-            _gl.NamedFramebufferDrawBuffer(fbo, GLEnum.None);
-            _gl.NamedFramebufferReadBuffer(fbo, GLEnum.None);
+            _gl.DrawBuffer(DrawBufferMode.None);
+            _gl.ReadBuffer(ReadBufferMode.None);
         }
 
-        var status = _gl.CheckNamedFramebufferStatus(fbo, FramebufferTarget.Framebuffer);
+        var status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+
         if (status != GLEnum.FramebufferComplete)
         {
             _gl.DeleteFramebuffers(1, in fbo);

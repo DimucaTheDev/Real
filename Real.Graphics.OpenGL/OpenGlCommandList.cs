@@ -52,7 +52,7 @@ internal sealed class OpenGlCommandList : ICommandList
 
         var entry = _buffers.Get(buffer);
         uint stride = _currentPipeline.Descriptor.VertexLayout.Stride;
-        _gl.VertexArrayVertexBuffer(_currentPipeline.Vao, slot, entry.Handle, (nint)offset, stride);
+        _gl.BindVertexBuffer(slot, entry.Handle, (nint)offset, stride);
     }
 
     public void BindIndexBuffer(BufferHandle buffer, ulong offset = 0)
@@ -60,7 +60,7 @@ internal sealed class OpenGlCommandList : ICommandList
         if (!_hasPipeline) return;
 
         var entry = _buffers.Get(buffer);
-        _gl.VertexArrayElementBuffer(_currentPipeline.Vao, entry.Handle);
+        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, entry.Handle);
         _indexBufferOffset = offset;
     }
 
@@ -69,8 +69,8 @@ internal sealed class OpenGlCommandList : ICommandList
         var tex = _textures.Get(texture);
         uint s = _samplers.Get(sampler);
 
-        // Direct State Access (DSA) in OpenGL 4.5+ / 4.6
-        _gl.BindTextureUnit(slot, tex.Handle);
+        _gl.ActiveTexture(TextureUnit.Texture0 + (int)slot);
+        _gl.BindTexture(TextureTarget.Texture2D, tex.Handle);
         _gl.BindSampler(slot, s);
     }
 

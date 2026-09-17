@@ -24,7 +24,7 @@ internal sealed class OpenGlSamplerPool : IDisposable
 
     public unsafe SamplerHandle Create(in SamplerDescriptor descriptor)
     {
-        _gl.CreateSamplers(1, out uint sampler);
+        _gl.GenSamplers(1, out uint sampler);
         if (sampler == 0)
             throw new InvalidOperationException("Failed to create OpenGL sampler.");
 

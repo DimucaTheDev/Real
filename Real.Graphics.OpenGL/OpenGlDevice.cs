@@ -30,29 +30,39 @@ public sealed class OpenGlDevice : IGraphicsDevice
 
     public unsafe OpenGlDevice(IWindow window, bool enableValidation = false)
     {
+        window.Show();
+
+        _glfw = Glfw.GetApi();
+
         if (window.Handle != 0)
         {
-            window.Show();
-
             try
             {
-                _glfw = Glfw.GetApi();
                 _glfw.MakeContextCurrent((WindowHandle*)window.Handle);
                 _glfw.SwapInterval(1);
-                var glfwContext = new GlfwContext(_glfw, (WindowHandle*)window.Handle);
-                _gl = GL.GetApi(glfwContext);
             }
             catch
             {
-                _glfw ??= Glfw.GetApi();
-                _gl = GL.GetApi(new LamdaNativeContext(proc => (nint)_glfw.GetProcAddress(proc)));
+                // Ignored
             }
         }
-        else
+
+        if (_glfw.GetCurrentContext() == null)
         {
-            _glfw = Glfw.GetApi();
-            _gl = GL.GetApi(new LamdaNativeContext(proc => (nint)_glfw.GetProcAddress(proc)));
+            _glfw.WindowHint(WindowHintBool.Visible, false);
+            _glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.OpenGL);
+            _glfw.WindowHint(WindowHintInt.ContextVersionMajor, 4);
+            _glfw.WindowHint(WindowHintInt.ContextVersionMinor, 6);
+            _glfw.WindowHint(WindowHintOpenGlProfile.OpenGlProfile, OpenGlProfile.Core);
+            _glfw.WindowHint(WindowHintBool.OpenGLForwardCompat, true);
+            var ctxWindow = _glfw.CreateWindow(1, 1, "Real_OpenGl_Context", null, null);
+            if (ctxWindow != null)
+            {
+                _glfw.MakeContextCurrent(ctxWindow);
+            }
         }
+
+        _gl = GL.GetApi(new LamdaNativeContext(proc => (nint)_glfw.GetProcAddress(proc)));
 
         if (enableValidation)
         {

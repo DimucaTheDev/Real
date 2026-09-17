@@ -41,22 +41,24 @@ internal sealed class OpenGlBufferPool : IDisposable
 
     public unsafe BufferHandle Create(in BufferDescriptor descriptor, ReadOnlySpan<byte> initialData = default)
     {
-        _gl.CreateBuffers(1, out uint buffer);
+        _gl.GenBuffers(1, out uint buffer);
         if (buffer == 0)
             throw new InvalidOperationException("Failed to create OpenGL buffer.");
 
         var usage = descriptor.CpuVisible ? BufferUsageARB.DynamicDraw : BufferUsageARB.StaticDraw;
+        _gl.BindBuffer(BufferTargetARB.CopyWriteBuffer, buffer);
         if (!initialData.IsEmpty)
         {
             fixed (byte* ptr = initialData)
             {
-                _gl.NamedBufferData(buffer, (nuint)Math.Max(descriptor.Size, (ulong)initialData.Length), ptr, usage);
+                _gl.BufferData(BufferTargetARB.CopyWriteBuffer, (nuint)Math.Max(descriptor.Size, (ulong)initialData.Length), ptr, usage);
             }
         }
         else
         {
-            _gl.NamedBufferData(buffer, (nuint)descriptor.Size, null, usage);
+            _gl.BufferData(BufferTargetARB.CopyWriteBuffer, (nuint)descriptor.Size, null, usage);
         }
+        _gl.BindBuffer(BufferTargetARB.CopyWriteBuffer, 0);
 
         uint slotIndex;
         if (_freeSlots.Count > 0)

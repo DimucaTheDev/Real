@@ -40,14 +40,18 @@ internal sealed class OpenGlTexturePool : IDisposable
 
     public unsafe TextureHandle Create(in TextureDescriptor descriptor, ReadOnlySpan<byte> initialData = default)
     {
-        _gl.CreateTextures(TextureTarget.Texture2D, 1, out uint texture);
+        _gl.GenTextures(1, out uint texture);
         if (texture == 0)
             throw new InvalidOperationException("Failed to create OpenGL texture.");
 
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+
         var internalFormat = GlFormatMap.ToSizedInternalFormat(descriptor.Format);
         uint levels = Math.Max(1u, descriptor.MipLevels);
+        uint width = Math.Max(1u, descriptor.Width);
+        uint height = Math.Max(1u, descriptor.Height);
 
-        _gl.TextureStorage2D(texture, levels, internalFormat, Math.Max(1u, descriptor.Width), Math.Max(1u, descriptor.Height));
+        _gl.TexStorage2D(TextureTarget.Texture2D, levels, internalFormat, width, height);
 
         if (!initialData.IsEmpty)
         {
@@ -55,22 +59,24 @@ internal sealed class OpenGlTexturePool : IDisposable
             var pixelType = GlFormatMap.ToPixelType(descriptor.Format);
             fixed (byte* ptr = initialData)
             {
-                _gl.TextureSubImage2D(
-                    texture,
+                _gl.TexSubImage2D(
+                    TextureTarget.Texture2D,
                     0,
                     0, 0,
-                    Math.Max(1u, descriptor.Width),
-                    Math.Max(1u, descriptor.Height),
+                    width,
+                    height,
                     pixelFormat,
                     pixelType,
                     ptr);
             }
         }
 
-        _gl.TextureParameter(texture, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-        _gl.TextureParameter(texture, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-        _gl.TextureParameter(texture, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-        _gl.TextureParameter(texture, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
 
         return AllocateSlot(new OpenGlTextureEntry(texture, descriptor, ownsTexture: true));
     }

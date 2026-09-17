@@ -100,13 +100,14 @@ internal sealed class OpenGlRenderGraph : IRenderGraph, IDisposable
             // If this pass rendered to the swapchain backbuffer, blit to the default framebuffer (0)
             if (swapchain != null && pass.ColorWrites.Contains(swapchain.BackbufferHandle))
             {
-                _gl.BlitNamedFramebuffer(
-                    fbo,
-                    0,
+                _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, fbo);
+                _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+                _gl.BlitFramebuffer(
                     0, 0, (int)width, (int)height,
                     0, 0, (int)swapchain.Width, (int)swapchain.Height,
                     ClearBufferMask.ColorBufferBit,
                     BlitFramebufferFilter.Nearest);
+                _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             }
         }
 
