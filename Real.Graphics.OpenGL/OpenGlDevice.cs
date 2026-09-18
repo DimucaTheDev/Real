@@ -108,6 +108,29 @@ public sealed class OpenGlDevice : IGraphicsDevice
             {
                 _gl.Enable(EnableCap.DebugOutput);
                 _gl.Enable(EnableCap.DebugOutputSynchronous);
+
+                /*
+                 * Важно: отключаем NOTIFICATION-уровень сообщений НА СТОРОНЕ ДРАЙВЕРА.
+                 *
+                 * Без этого некоторые драйверы (особенно NVIDIA) шлют
+                 * perf/notification-сообщения на каждый bind/draw вызов, а наш коллбэк
+                 * на каждое такое сообщение делает Marshal.PtrToStringAnsi +
+                 * Console.WriteLine. Вывод в Debug/Output окно Visual Studio копит
+                 * всю историю строк без очистки, что при сотнях сообщений/сек и
+                 * выглядит как утечка памяти (на самом деле растёт память
+                 * devenv.exe, а не нашего процесса) — именно этим, похоже,
+                 * объясняется, почему утечка видна только на OpenGL (в Vulkan
+                 * валидация намного менее болтлива и не сыплет сообщениями
+                 * каждый кадр).
+                 */
+                _gl.DebugMessageControl(
+                    DebugSource.DontCare,
+                    DebugType.DontCare,
+                    DebugSeverity.DebugSeverityNotification,
+                    0,
+                    null,
+                    false);
+
                 _debugCallback = (source, type, id, severity, length, message, userParam) =>
                 {
                     string msg = Marshal.PtrToStringAnsi(message, length);

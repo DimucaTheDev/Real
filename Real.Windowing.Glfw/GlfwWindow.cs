@@ -1,5 +1,8 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
+using Real.Core.Input;
 using Silk.NET.GLFW;
+using MouseButton = Real.Core.Input.MouseButton;
 
 namespace Real.Windowing.Glfw;
 
@@ -116,6 +119,11 @@ public unsafe class GlfwWindow : IWindow
     public event Action<WindowState>? StateChanged;
     public event Action<bool>? FocusChanged;
     public event Action<string[]>? FilesDropped;
+    public event Action<Vector2>? MouseMoved;
+    public event Action<MouseButton, bool>? MouseButtonChanged;
+    public event Action<Vector2>? MouseScrolled;
+    public event Action<KeyCode, bool>? KeyChanged;
+    public event Action<char>? CharacterInput;
 
     private readonly Silk.NET.GLFW.Glfw _glfw = Silk.NET.GLFW.Glfw.GetApi();
     private WindowHandle* _handle;
@@ -131,7 +139,7 @@ public unsafe class GlfwWindow : IWindow
     private readonly GlfwCallbacks.DropCallback _dropCallback;
 
     public GlfwWindow(GraphicsApi api)
-    { 
+    {
         if (!_glfw.Init())
         {
             throw new SystemException("Unable to initialize GLFW");
@@ -190,7 +198,7 @@ public unsafe class GlfwWindow : IWindow
     }
 
     private void CreateWindow()
-    { 
+    {
         _glfw.WindowHint(WindowHintBool.Visible, false);
         _glfw.WindowHint(WindowHintBool.Resizable, Border == WindowBorder.Resizable);
         _glfw.WindowHint(WindowHintBool.Decorated, Border != WindowBorder.Hidden);
@@ -227,7 +235,8 @@ public unsafe class GlfwWindow : IWindow
         _glfw.SetWindowFocusCallback(_handle, _focusCallback);
         _glfw.SetWindowCloseCallback(_handle, _closeCallback);
         _glfw.SetDropCallback(_handle, _dropCallback);
-
+ 
+        
         ApplyState(_state);
     }
 

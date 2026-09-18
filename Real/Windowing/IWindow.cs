@@ -1,3 +1,6 @@
+using System.Numerics;
+using Real.Core.Input;
+
 namespace Real.Windowing;
 
 public interface IWindow : IDisposable
@@ -31,4 +34,10 @@ public interface IWindow : IDisposable
     event Action<WindowState>? StateChanged;
     event Action<bool>? FocusChanged;
     event Action<string[]>? FilesDropped;
+    
+    event Action<Vector2>? MouseMoved;
+    event Action<MouseButton, bool>? MouseButtonChanged;
+    event Action<Vector2>? MouseScrolled;
+    event Action<KeyCode, bool>? KeyChanged;
+    event Action<char>? CharacterInput;
 }

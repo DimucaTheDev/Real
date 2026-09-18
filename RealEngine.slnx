@@ -10,6 +10,10 @@
     <Project Path="Real.Graphics.OpenGL/Real.Graphics.OpenGL.csproj" />
     <Project Path="Real.Graphics.Vulkan/Real.Graphics.Vulkan.csproj" />
   </Folder>
+  <Folder Name="/Engine/Tools/">
+    <File Path="Real.Tools.Testing.txt" />
+    <Project Path="Real.Tools.ImGui/Real.Tools.ImGui.csproj" />
+  </Folder>
   <Folder Name="/Engine/Windowing/">
     <Project Path="Real.Windowing.Glfw/Real.Windowing.Glfw.csproj" />
   </Folder>
