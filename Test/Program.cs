@@ -1,3 +1,4 @@
+using Hexa.NET.ImGui;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -8,6 +9,7 @@ using Real.Graphics.Rhi;
 using Real.Graphics.Rhi.Descriptors;
 using Real.Graphics.Rhi.Enums;
 using Real.Graphics.Vulkan;
+using Real.ImGui;
 using Real.Windowing;
 using Real.Windowing.Glfw;
 
@@ -74,6 +76,10 @@ unsafe class Program
             Debugger.IsAttached);
 
         using var swapchain = device.CreateSwapchain(window);
+
+        // ImGui поднимается после свопчейна, т.к. пайплайну нужен
+        // swapchain.Format для ColorAttachmentFormats.
+        using var imgui = new ImGuiController(window, device, swapchain.Format);
 
         /*
          * Каждая грань находится в отдельном буфере.
@@ -296,6 +302,7 @@ unsafe class Program
                 });
 
         var stopwatch = Stopwatch.StartNew();
+        float lastTime = 0f;
 
         var faces = new FaceInfo[6];
         while (!window.IsClosing)
@@ -320,6 +327,12 @@ unsafe class Program
 
             float time =
                 (float)stopwatch.Elapsed.TotalSeconds;
+
+            imgui.NewFrame(time - lastTime);
+            lastTime = time;
+
+            // Просто для проверки, что ImGui реально рисуется поверх куба.
+            Hexa.NET.ImGui.ImGui.ShowDemoWindow();
 
             float aspect =
                 (float)window.Size.Width /
@@ -473,6 +486,23 @@ unsafe class Program
 
                         cmd.Draw(vertexCount: 6);
                     }
+
+                    // ImGui рисуется В ТОМ ЖЕ проходе, тем же ICommandList,
+                    // сразу после куба - НЕ отдельным AddPass(...).Writes(backbuffer).
+                    //
+                    // Причина: RenderPassBuilder/рендер-графы (что GL, что Vulkan)
+                    // сейчас не умеют LoadOp.Load - Writes() всегда означает "очистить
+                    // перед рисованием" (OpenGlRenderGraph.Execute безусловно ставит
+                    // ClearBufferMask.ColorBufferBit для любого прохода с ColorWrites,
+                    // а VulkanRenderPassCache.GetOrCreate жёстко прописывает
+                    // LoadOp = AttachmentLoadOp.Clear на весь закэшированный VkRenderPass).
+                    // Второй AddPass(...).Writes(backbuffer) для ImGui стёр бы куб,
+                    // который CubePass только что нарисовал в тот же backbuffer.
+                    // Если понадобится по-настоящему многопроходный рендеринг (с
+                    // сохранением содержимого между проходами) - в RenderPassBuilder
+                    // нужно сначала завести LoadOp (Clear/Load) на Writes(), и
+                    // протащить его через оба рендер-графа.
+                    imgui.Render(cmd);
                 });
 
             graph.Execute();

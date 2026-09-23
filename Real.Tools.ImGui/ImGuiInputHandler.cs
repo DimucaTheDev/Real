@@ -23,8 +23,7 @@ public sealed class ImGuiInputHandler : IDisposable
 
     private void OnMouseMoved(Vector2 pos)
     {
-        var io = Hexa.NET.ImGui.ImGui.GetIO();
-        io.AddMousePosEvent(pos.X, pos.Y);
+        Hexa.NET.ImGui.ImGui.GetIO().AddMousePosEvent(pos.X, pos.Y);
     }
 
     private void OnMouseButtonChanged(MouseButton button, bool pressed)
@@ -37,6 +36,9 @@ public sealed class ImGuiInputHandler : IDisposable
             MouseButton.Middle => 2,
             MouseButton.Button4 => 3,
             MouseButton.Button5 => 4,
+            MouseButton.Button6 => 5,
+            MouseButton.Button7 => 6,
+            MouseButton.Button8 => 7,
             _ => -1
         };
 
@@ -48,16 +50,31 @@ public sealed class ImGuiInputHandler : IDisposable
 
     private void OnMouseScrolled(Vector2 delta)
     {
-        var io = Hexa.NET.ImGui.ImGui.GetIO();
-        io.AddMouseWheelEvent(delta.X, delta.Y);
+        Hexa.NET.ImGui.ImGui.GetIO().AddMouseWheelEvent(delta.X, delta.Y);
     }
 
     private void OnKeyChanged(KeyCode key, bool pressed)
     {
         var io = Hexa.NET.ImGui.ImGui.GetIO();
 
-        // Модификаторы — если у вас в KeyCode есть Shift/Ctrl/Alt/Super, лучше
-        // трекать их состояние отдельно и слать io.AddKeyEvent(ImGuiKey.ModCtrl, ...)
+        // Модификаторы ImGui хочет получать отдельными "виртуальными" клавишами
+        // ModCtrl/ModShift/ModAlt/ModSuper - шлём их дополнительно к обычной клавише.
+        switch (key)
+        {
+            case KeyCode.LeftControl or KeyCode.RightControl:
+                io.AddKeyEvent(ImGuiKey.ModCtrl, pressed);
+                break;
+            case KeyCode.LeftShift or KeyCode.RightShift:
+                io.AddKeyEvent(ImGuiKey.ModShift, pressed);
+                break;
+            case KeyCode.LeftAlt or KeyCode.RightAlt:
+                io.AddKeyEvent(ImGuiKey.ModAlt, pressed);
+                break;
+            case KeyCode.LeftSuper or KeyCode.RightSuper:
+                io.AddKeyEvent(ImGuiKey.ModSuper, pressed);
+                break;
+        }
+
         var imguiKey = MapKey(key);
         if (imguiKey != ImGuiKey.None)
         {
@@ -67,8 +84,7 @@ public sealed class ImGuiInputHandler : IDisposable
 
     private void OnCharacterInput(char c)
     {
-        var io = Hexa.NET.ImGui.ImGui.GetIO();
-        io.AddInputCharacter(c);
+        Hexa.NET.ImGui.ImGui.GetIO().AddInputCharacter(c);
     }
 
     private void OnFocusChanged(bool focused)
@@ -76,8 +92,6 @@ public sealed class ImGuiInputHandler : IDisposable
         Hexa.NET.ImGui.ImGui.GetIO().AddFocusEvent(focused);
     }
 
-    // ВАЖНО: имена элементов KeyCode здесь — предположение (стандартная
-    // раскладка a-la GLFW). Подставьте реальные имена вашего enum.
     private static ImGuiKey MapKey(KeyCode key) => key switch
     {
         KeyCode.A => ImGuiKey.A, KeyCode.B => ImGuiKey.B, KeyCode.C => ImGuiKey.C,
@@ -95,6 +109,11 @@ public sealed class ImGuiInputHandler : IDisposable
         KeyCode.D6 => ImGuiKey.Key6, KeyCode.D7 => ImGuiKey.Key7, KeyCode.D8 => ImGuiKey.Key8,
         KeyCode.D9 => ImGuiKey.Key9,
 
+        KeyCode.F1 => ImGuiKey.F1, KeyCode.F2 => ImGuiKey.F2, KeyCode.F3 => ImGuiKey.F3,
+        KeyCode.F4 => ImGuiKey.F4, KeyCode.F5 => ImGuiKey.F5, KeyCode.F6 => ImGuiKey.F6,
+        KeyCode.F7 => ImGuiKey.F7, KeyCode.F8 => ImGuiKey.F8, KeyCode.F9 => ImGuiKey.F9,
+        KeyCode.F10 => ImGuiKey.F10, KeyCode.F11 => ImGuiKey.F11, KeyCode.F12 => ImGuiKey.F12,
+
         KeyCode.Space => ImGuiKey.Space,
         KeyCode.Enter => ImGuiKey.Enter,
         KeyCode.Escape => ImGuiKey.Escape,
@@ -104,15 +123,52 @@ public sealed class ImGuiInputHandler : IDisposable
         KeyCode.Right => ImGuiKey.RightArrow,
         KeyCode.Up => ImGuiKey.UpArrow,
         KeyCode.Down => ImGuiKey.DownArrow,
+        KeyCode.Insert => ImGuiKey.Insert,
         KeyCode.Delete => ImGuiKey.Delete,
         KeyCode.Home => ImGuiKey.Home,
         KeyCode.End => ImGuiKey.End,
+        KeyCode.PageUp => ImGuiKey.PageUp,
+        KeyCode.PageDown => ImGuiKey.PageDown,
+        KeyCode.CapsLock => ImGuiKey.CapsLock,
+        KeyCode.ScrollLock => ImGuiKey.ScrollLock,
+        KeyCode.NumLock => ImGuiKey.NumLock,
+        KeyCode.PrintScreen => ImGuiKey.PrintScreen,
+        KeyCode.Pause => ImGuiKey.Pause,
+        KeyCode.Menu => ImGuiKey.Menu,
+
+        KeyCode.Apostrophe => ImGuiKey.Apostrophe,
+        KeyCode.Comma => ImGuiKey.Comma,
+        KeyCode.Minus => ImGuiKey.Minus,
+        KeyCode.Period => ImGuiKey.Period,
+        KeyCode.Slash => ImGuiKey.Slash,
+        KeyCode.Semicolon => ImGuiKey.Semicolon,
+        KeyCode.Equal => ImGuiKey.Equal,
+        KeyCode.LeftBracket => ImGuiKey.LeftBracket,
+        KeyCode.Backslash => ImGuiKey.Backslash,
+        KeyCode.RightBracket => ImGuiKey.RightBracket,
+        KeyCode.GraveAccent => ImGuiKey.GraveAccent,
+
         KeyCode.LeftShift => ImGuiKey.LeftShift,
         KeyCode.RightShift => ImGuiKey.RightShift,
         KeyCode.LeftControl => ImGuiKey.LeftCtrl,
         KeyCode.RightControl => ImGuiKey.RightCtrl,
         KeyCode.LeftAlt => ImGuiKey.LeftAlt,
         KeyCode.RightAlt => ImGuiKey.RightAlt,
+        KeyCode.LeftSuper => ImGuiKey.LeftSuper,
+        KeyCode.RightSuper => ImGuiKey.RightSuper,
+
+        KeyCode.KeyPad0 => ImGuiKey.Keypad0, KeyCode.KeyPad1 => ImGuiKey.Keypad1,
+        KeyCode.KeyPad2 => ImGuiKey.Keypad2, KeyCode.KeyPad3 => ImGuiKey.Keypad3,
+        KeyCode.KeyPad4 => ImGuiKey.Keypad4, KeyCode.KeyPad5 => ImGuiKey.Keypad5,
+        KeyCode.KeyPad6 => ImGuiKey.Keypad6, KeyCode.KeyPad7 => ImGuiKey.Keypad7,
+        KeyCode.KeyPad8 => ImGuiKey.Keypad8, KeyCode.KeyPad9 => ImGuiKey.Keypad9,
+        KeyCode.KeyPadDecimal => ImGuiKey.KeypadDecimal,
+        KeyCode.KeyPadDivide => ImGuiKey.KeypadDivide,
+        KeyCode.KeyPadMultiply => ImGuiKey.KeypadMultiply,
+        KeyCode.KeyPadSubtract => ImGuiKey.KeypadSubtract,
+        KeyCode.KeyPadAdd => ImGuiKey.KeypadAdd,
+        KeyCode.KeyPadEnter => ImGuiKey.KeypadEnter,
+        KeyCode.KeyPadEqual => ImGuiKey.KeypadEqual,
 
         _ => ImGuiKey.None
     };

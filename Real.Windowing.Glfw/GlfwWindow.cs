@@ -137,6 +137,11 @@ public unsafe class GlfwWindow : IWindow
     private readonly GlfwCallbacks.WindowFocusCallback _focusCallback;
     private readonly GlfwCallbacks.WindowCloseCallback _closeCallback;
     private readonly GlfwCallbacks.DropCallback _dropCallback;
+    private readonly GlfwCallbacks.CursorPosCallback _cursorPosCallback;
+    private readonly GlfwCallbacks.MouseButtonCallback _mouseButtonCallback;
+    private readonly GlfwCallbacks.ScrollCallback _scrollCallback;
+    private readonly GlfwCallbacks.KeyCallback _keyCallback;
+    private readonly GlfwCallbacks.CharCallback _charCallback;
 
     public GlfwWindow(GraphicsApi api)
     {
@@ -152,6 +157,11 @@ public unsafe class GlfwWindow : IWindow
         _focusCallback = OnWindowFocusChanged;
         _closeCallback = OnWindowClosing;
         _dropCallback = OnFilesDropped;
+        _cursorPosCallback = OnCursorPos;
+        _mouseButtonCallback = OnMouseButton;
+        _scrollCallback = OnScroll;
+        _keyCallback = OnKey;
+        _charCallback = OnChar;
 
         Title = $"GLFW Window ({api})";
     }
@@ -235,8 +245,13 @@ public unsafe class GlfwWindow : IWindow
         _glfw.SetWindowFocusCallback(_handle, _focusCallback);
         _glfw.SetWindowCloseCallback(_handle, _closeCallback);
         _glfw.SetDropCallback(_handle, _dropCallback);
- 
-        
+        _glfw.SetCursorPosCallback(_handle, _cursorPosCallback);
+        _glfw.SetMouseButtonCallback(_handle, _mouseButtonCallback);
+        _glfw.SetScrollCallback(_handle, _scrollCallback);
+        _glfw.SetKeyCallback(_handle, _keyCallback);
+        _glfw.SetCharCallback(_handle, _charCallback);
+
+
         ApplyState(_state);
     }
 
@@ -285,6 +300,36 @@ public unsafe class GlfwWindow : IWindow
     private void OnWindowClosing(WindowHandle* window)
     {
         Closing?.Invoke();
+    }
+
+    private void OnCursorPos(WindowHandle* window, double x, double y)
+    {
+        MouseMoved?.Invoke(new Vector2((float)x, (float)y));
+    }
+
+    private void OnMouseButton(WindowHandle* window, Silk.NET.GLFW.MouseButton button, InputAction action, KeyModifiers mods)
+    {
+        MouseButtonChanged?.Invoke((MouseButton)(int)button, action != InputAction.Release);
+    }
+
+    private void OnScroll(WindowHandle* window, double xOffset, double yOffset)
+    {
+        MouseScrolled?.Invoke(new Vector2((float)xOffset, (float)yOffset));
+    }
+
+    private void OnKey(WindowHandle* window, Keys key, int scancode, InputAction action, KeyModifiers mods)
+    {
+        if (key == Keys.Unknown) return;
+
+        // Repeat считаем как "нажато" (true) - для игрового инпута это обычно
+        // не нужно (там KeyChanged используют для edge-detection), а для
+        // текстовых полей ImGui важнее символ из CharacterInput, не повтор кода клавиши.
+        KeyChanged?.Invoke((KeyCode)(int)key, action != InputAction.Release);
+    }
+
+    private void OnChar(WindowHandle* window, uint codepoint)
+    {
+        CharacterInput?.Invoke((char)codepoint);
     }
 
     private void OnFilesDropped(WindowHandle* window, int count, nint paths)

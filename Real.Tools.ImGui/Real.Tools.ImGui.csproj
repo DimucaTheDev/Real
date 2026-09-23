@@ -4,6 +4,7 @@
         <TargetFramework>net11.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <RootNamespace>Real.Tools.ImGui</RootNamespace>
     </PropertyGroup>
 
@@ -13,6 +14,18 @@
 
     <ItemGroup>
       <ProjectReference Include="..\Real\Real.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- Копируются транзитивно и в output того .exe-проекта, который
+           ссылается на Real.Tools.ImGui (например Test), т.к. MSBuild
+           тащит CopyToOutputDirectory-элементы через ProjectReference. -->
+      <None Update="shaders\imgui.vert">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+      <None Update="shaders\imgui.frag">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 
 </Project>

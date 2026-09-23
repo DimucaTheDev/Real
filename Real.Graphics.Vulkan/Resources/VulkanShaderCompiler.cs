@@ -89,10 +89,24 @@ internal sealed class VulkanShaderCompiler
             // CmdPushConstants в VulkanCommandList.SetUniform.
             //shaderc.CompileOptionsAddMacroDefinition(options, "VULKAN", (nuint)6, "1", (nuint)1);
 
+            // ВАЖНО: source.Length - это количество UTF-16 code units в C#-строке,
+            // а не байт UTF-8, которые реально уходят в нативный
+            // shaderc_compile_into_spv (Silk.NET маршалит string-параметр в
+            // UTF-8 сам, но nuint-длину не пересчитывает - её считает вызывающий
+            // код). Для чисто ASCII-шейдеров оба числа совпадают, поэтому баг
+            // был незаметен - но для любого шейдера с не-ASCII символами в
+            // комментариях (например кириллицей) source.Length оказывается
+            // МЕНЬШЕ настоящей длины UTF-8-буфера, shaderc получает урезанный
+            // по байтам (а не по символам) буфер, и в зависимости от того, где
+            // именно пришёлся обрез - ловит либо "useless application of layout
+            // qualifier" на случайной строке, либо "Missing entry point", если
+            // обрезало раньше void main().
+            var sourceByteCount = (nuint)Encoding.UTF8.GetByteCount(source);
+
             var result = shaderc.CompileIntoSpv(
                 compiler,
                 source,
-                (nuint)source.Length,
+                sourceByteCount,
 
                 kind,
                 fileName,

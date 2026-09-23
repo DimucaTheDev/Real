@@ -49,11 +49,44 @@ internal sealed class VulkanPipelinePool : IDisposable
         var fsEntry = _shaderPool.Get(descriptor.FragmentShader);
 
         // 1. Create DescriptorSetLayout
+        //
+        // ВАЖНО: раньше здесь было BindingCount = 0 / PBindings = null - то есть
+        // абсолютно ЛЮБОЙ пайплайн получал пустой descriptor set layout. Это
+        // делало ICommandList.SetTexture/SetUniformBuffer нерабочими на Vulkan
+        // в принципе: vkUpdateDescriptorSets с DstBinding, которого нет в layout'е,
+        // это undefined behavior/ошибка валидации, а не молчаливый no-op.
+        //
+        // Пока в PipelineDescriptor нет явного описания биндингов (нет ни
+        // reflection SPIR-V, ни списка "слотов"), заводим единственный
+        // универсальный набор: binding 0 - combined image sampler (то, что
+        // использует ICommandList.SetTexture), binding 1 - uniform buffer
+        // (то, что использует SetUniformBuffer). Обе стадии, т.к. у нас нет
+        // способа узнать, из какого шейдера идёт обращение.
+        //
+        // Это самый минимальный фикс, чтобы SetTexture вообще работал (нужен
+        // для рендера текстуры шрифта ImGui). Если пайплайну текстуры не нужны -
+        // ничего не меняется, лишний unused binding в layout'е безвреден.
+        var bindings = stackalloc DescriptorSetLayoutBinding[2];
+        bindings[0] = new DescriptorSetLayoutBinding
+        {
+            Binding = 0,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit
+        };
+        bindings[1] = new DescriptorSetLayoutBinding
+        {
+            Binding = 1,
+            DescriptorType = DescriptorType.UniformBuffer,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit
+        };
+
         var setLayoutInfo = new DescriptorSetLayoutCreateInfo
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 0,
-            PBindings = null
+            BindingCount = 2,
+            PBindings = bindings
         };
         var res = _vk.CreateDescriptorSetLayout(_device, in setLayoutInfo, null, out var descriptorSetLayout);
         if (res != Result.Success)
